@@ -12,9 +12,9 @@ object Config {
     // 次数的摆动数值
     val shake = 12
     // 休息成功的概率
-    val sleepFactor = 0.5
+    val sleepFactor = 0.99
     // 休息时间
-    val sleep = 3L
+    val sleep = 100L
 
 
 

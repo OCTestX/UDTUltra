@@ -22,10 +22,6 @@ object FileTreeManager {
         return toHex(file.absolutePath)
     }
 
-    fun getDirPathHex16(dir: File): List<String> {
-        return toHex(dir.absolutePath)
-    }
-
     private fun toHex(path: String): List<String> {
         return BigInteger(path.toByteArray()).toString(16).chunkedSequence(120).toList()
     }

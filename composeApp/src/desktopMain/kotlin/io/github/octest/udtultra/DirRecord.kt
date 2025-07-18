@@ -1,6 +1,5 @@
 package io.github.octest.udtultra
 
-import java.io.File
 import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octest.udtultra.repository.UDTDatabase.DirTreeEntry
 import io.github.octestx.basic.multiplatform.common.utils.gb
@@ -8,6 +7,7 @@ import io.github.octestx.basic.multiplatform.common.utils.mb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class DirRecord(
     private val entry: DirTreeEntry
@@ -25,7 +25,7 @@ class DirRecord(
         if (file.isDirectory) {
             file.listFiles()?.forEach { child ->
                 println("Traverse: $child")
-                addFile(child)
+                seekFile(child)
                 Config.seekPoint()
                 if (child.isDirectory) {
                     traverseDirectory(child)
