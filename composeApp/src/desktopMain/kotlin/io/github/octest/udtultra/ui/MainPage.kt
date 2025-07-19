@@ -50,7 +50,17 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
             },
             backDirectory = {
                 state.action(MainPageAction.BackDirectory)
-            })
+            },
+            sendFileTo = {
+
+            },
+            sendFileToDesktop = {
+
+            },
+            deleteAndBanFile = {
+                TODO()
+            }
+        )
     }
 
     /**
@@ -166,7 +176,10 @@ fun FileBrowserUI(
     currentDirs: List<UDTDatabase.DirRecord>,
     canBack: Boolean,
     intoDirectory: (String) -> Unit,
-    backDirectory: () -> Unit
+    backDirectory: () -> Unit,
+    sendFileTo: (UDTDatabase.FileRecord) -> Unit,
+    sendFileToDesktop: (UDTDatabase.FileRecord) -> Unit,
+    deleteAndBanFile: (UDTDatabase.FileRecord) -> Unit
 ) {
     // 添加文件详情弹窗状态
     var selectedFile by remember { mutableStateOf<UDTDatabase.FileRecord?>(null) }
@@ -264,6 +277,9 @@ fun FileBrowserUI(
                         Button(
                             onClick = {
                                 // 导出文件逻辑
+                                selectedFile?.let {
+                                    sendFileTo(it)
+                                }
                                 selectedFile = null
                             },
                             modifier = Modifier.padding(end = 8.dp)
@@ -273,17 +289,31 @@ fun FileBrowserUI(
                         Button(
                             onClick = {
                                 // 发送到桌面逻辑
+                                selectedFile?.let {
+                                    sendFileToDesktop(it)
+                                }
                                 selectedFile = null
                             },
                             modifier = Modifier.padding(end = 8.dp)
                         ) {
                             Text("发送到桌面")
                         }
+                        var lastClickTime by remember(selectedFile) { mutableStateOf(0L) }
                         Button(
                             onClick = {
-//                                // 发送到桌面逻辑
-//                                selectedFile = null
-                                //TODO
+                                val currentTime = System.currentTimeMillis()
+                                if (currentTime - lastClickTime < 300) { // 双击检测
+                                    selectedFile?.let { file ->
+                                        // 删除文件记录
+                                        deleteAndBanFile(file)
+                                        // 关闭对话框
+                                        selectedFile = null
+                                    }
+                                    lastClickTime = 0
+                                } else {
+                                    // 记录单击时间
+                                    lastClickTime = currentTime
+                                }
                             },
                             modifier = Modifier.padding(end = 8.dp),
                             colors = ButtonDefaults.buttonColors(
