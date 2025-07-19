@@ -168,6 +168,10 @@ fun FileBrowserUI(
     intoDirectory: (String) -> Unit,
     backDirectory: () -> Unit
 ) {
+    // 添加文件详情弹窗状态
+    var selectedFile by remember { mutableStateOf<UDTDatabase.FileRecord?>(null) }
+    val showFileDetail = selectedFile != null
+
     // 添加控制侧滑栏的状态
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     // 添加列表加载状态
@@ -240,6 +244,59 @@ fun FileBrowserUI(
             }
         }
     ) {
+        // 添加文件详情弹窗
+        if (showFileDetail) {
+            AlertDialog(
+                onDismissRequest = { selectedFile = null },
+                title = { Text("文件详情") },
+                text = {
+                    selectedFile?.let { file ->
+                        Column {
+                            Text("文件名: ${file.fileName}", style = MaterialTheme.typography.bodyLarge)
+                            Spacer(Modifier.height(8.dp))
+                            Text("大小: ${storage(file.size)}", style = MaterialTheme.typography.bodyMedium)
+                            Text("路径: ${file.relationFilePath}", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                },
+                confirmButton = {
+                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = {
+                                // 导出文件逻辑
+                                selectedFile = null
+                            },
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text("导出")
+                        }
+                        Button(
+                            onClick = {
+                                // 发送到桌面逻辑
+                                selectedFile = null
+                            },
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text("发送到桌面")
+                        }
+                        Button(
+                            onClick = {
+//                                // 发送到桌面逻辑
+//                                selectedFile = null
+                                //TODO
+                            },
+                            modifier = Modifier.padding(end = 8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        ) {
+                            Text("删除并排除(双击)", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            )
+        }
+
         Scaffold(
             topBar = {
                 val scope = rememberCoroutineScope()
@@ -295,7 +352,6 @@ fun FileBrowserUI(
                                 .padding(8.dp)
                                 .fillMaxSize()
                         ) {
-                            // 文件项列表 - 添加动画效果
                             items(
                                 items = currentFiles,
                                 key = { it.relationFilePath }
@@ -303,12 +359,12 @@ fun FileBrowserUI(
                                 DelayShowAnimationFromTopLeft(
                                     modifier = Modifier.animateItem()
                                 ) {
+                                    // 修改文件点击事件：显示详情弹窗
                                     FileItemUI(file = file) {
-                                        TODO("点击文件时弹窗显示更详细信息，并且有导出按钮和发送到桌面按钮")
+                                        selectedFile = file
                                     }
                                 }
                             }
-                            // 目录项列表 - 添加动画效果
                             items(
                                 items = currentDirs,
                                 key = { it.relationDirPath }
