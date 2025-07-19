@@ -1,17 +1,17 @@
 package io.github.octest.udtultra.ui
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
 import compose.icons.tablericons.ArrowBack
+import compose.icons.tablericons.File
+import compose.icons.tablericons.Folder
 import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.github.octestx.basic.multiplatform.ui.ui.core.AbsUIPage
@@ -154,42 +154,88 @@ fun FileBrowserUI(
     backDirectory: () -> Unit
 ) {
     Row {
-        // 左侧目录树
-        LazyColumn {
-            items(entrys, key = { it.id }) {
-                Card(onClick = {
-                    // 点击根目录时的处理逻辑
-                }, Modifier.padding(6.dp)) {
-                    Column(Modifier.padding(3.dp)) {
+        // 左侧目录树优化：添加边框和悬停效果
+        LazyColumn(
+            Modifier
+                .width(240.dp)
+                .padding(8.dp)
+        ) {
+            items(entrys, key = { it.id }) { entry ->
+                val isSelected = currentEntry?.id == entry.id
+                Card(
+                    onClick = {
+                        // 点击根目录时的处理逻辑
+                    },
+                    Modifier.padding(4.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp)
+                ) {
+                    Column(Modifier.padding(6.dp)) {
                         Text(
-                            it.name,
-                            color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.titleLarge
+                            entry.name,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.titleMedium
                         )
-                        Text("总共${storage(it.totalSpace)}, 剩余${storage(it.freeSpace)}")
+                        Text(
+                            "总共${storage(entry.totalSpace)}, 剩余${storage(entry.freeSpace)}",
+                            style = MaterialTheme.typography.labelSmall
+                        )
                     }
                 }
             }
         }
-        // 右侧文件列表
+
+        // 右侧主内容区
         Column(Modifier.weight(1f)) {
-            Row {
-                // 返回按钮和路径显示
-                IconButton(onClick = {
-                    backDirectory()
-                }) {
-                    Icon(TablerIcons.ArrowBack, contentDescription = null)
+            // 路径导航栏优化
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.padding(8.dp)
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp)
+                ) {
+                    // 返回按钮增强
+                    IconButton(
+                        onClick = backDirectory,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            TablerIcons.ArrowBack,
+                            contentDescription = "返回上一级",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    // 路径文本优化
+                    Text(
+                        text = currentPath,
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .alignByBaseline(),
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
-                Text(currentPath)
             }
-            // 文件和子目录列表
-            LazyColumn(Modifier.weight(1f)) {
+
+            // 文件/目录列表优化
+            LazyColumn(
+                Modifier
+                    .weight(1f)
+                    .padding(8.dp)
+            ) {
+                // 文件项列表
                 items(currentFiles, key = { it.relationFilePath }) {
                     FileItemUI(it)
                 }
-                items(currentDirs, key = { it.relationDirPath }) {
-                    DirItemUI(it) {
-                        intoDirectory(it.dirName)
+
+                // 目录项列表
+                items(currentDirs, key = { it.relationDirPath }) { dir ->
+                    DirItemUI(dir) {
+                        intoDirectory(dir.dirName)
                     }
                 }
             }
@@ -197,42 +243,67 @@ fun FileBrowserUI(
     }
 }
 
-/**
- * 文件项UI组件
- * 展示单个文件信息
- */
+// 文件项UI优化：添加图标和悬停效果
 @Preview
 @Composable
 fun FileItemUI(file: UDTDatabase.FileRecord) {
-    Card(onClick = {
-        // 文件点击事件处理（待实现）
-    }, Modifier.padding(3.dp).fillMaxWidth()) {
-        Column(Modifier.padding(1.dp)) {
-            Text(
-                file.fileName,
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.titleLarge
+    Card(
+        onClick = { /* 文件点击事件处理（待实现） */ },
+        Modifier
+            .padding(2.dp)
+            .fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            Modifier.padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = TablerIcons.File,
+                contentDescription = "文件图标",
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.secondary
             )
-            Text(storage(file.size))
+            Column(Modifier.padding(start = 8.dp)) {
+                Text(
+                    file.fileName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    storage(file.size),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
         }
     }
 }
 
-/**
- * 目录项UI组件
- * 展示单个目录信息
- */
+// 目录项UI优化：添加图标和交互反馈
 @Preview
 @Composable
 fun DirItemUI(dir: UDTDatabase.DirRecord, click: () -> Unit) {
-    Card(onClick = {
-        click()
-    }, Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(1.dp)) {
+    Card(
+        onClick = click,
+        Modifier
+            .padding(2.dp)
+            .fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            Modifier.padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = TablerIcons.Folder,
+                contentDescription = "目录图标",
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
             Text(
                 dir.dirName,
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(start = 8.dp)
             )
         }
     }
