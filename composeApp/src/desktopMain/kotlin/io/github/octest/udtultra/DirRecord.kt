@@ -9,7 +9,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class DirRecord(
+class DirRecorder(
     private val entry: DirTreeEntry
 ) {
     suspend fun start() {
@@ -36,7 +36,7 @@ class DirRecord(
 }
 
 private fun main() {
-    val recorder = DirRecord(
+    val recorder = DirRecorder(
         entry = DirTreeEntry(
             name = "test",
             target = File("/home/octest/Desktop/UDTUltra/test"),

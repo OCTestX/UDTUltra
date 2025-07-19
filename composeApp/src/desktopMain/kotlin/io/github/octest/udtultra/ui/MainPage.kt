@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -19,27 +19,62 @@ import org.jetbrains.compose.ui.tooling.preview.Preview
 object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageAction>(MainPageModel()) {
     @Composable
     override fun UI(state: MainPageState) {
-        TODO("Not yet implemented")
-    }
-
-    class MainPageModel() : AbsUIModel<Unit, MainPageState, MainPageAction>() {
-        @Composable
-        override fun CreateState(params: Unit): MainPageState {
-            TODO("Not yet implemented")
-        }
-
-        override fun actionExecute(params: Unit, action: MainPageAction) {
-            TODO("Not yet implemented")
-        }
-
+        FileBrowserUI(state.entrys, state.currentEntry, state.currentFiles, state.currentDirs)
     }
 
     data class MainPageState(
-        val text: String = "Hello World"
+        val entrys: List<UDTDatabase.DirTreeEntry>,
+        val currentEntry: UDTDatabase.DirTreeEntry?,
+        val currentPath: String, // 新增当前路径状态
+        val currentFiles: List<UDTDatabase.FileRecord>,
+        val currentDirs: List<UDTDatabase.DirRecord>,
+        val action: (MainPageAction) -> Unit,
     ) : AbsUIState<MainPageAction>()
 
+    class MainPageModel() : AbsUIModel<Unit, MainPageState, MainPageAction>() {
+        private val entrys = UDTDatabase.getEntrys()
+        private var currentEntry: UDTDatabase.DirTreeEntry? by mutableStateOf(entrys.firstOrNull())
+        private var currentPath: String by mutableStateOf("") // 新增路径状态管理
+        private val currentFiles = mutableStateListOf<UDTDatabase.FileRecord>()
+        private val currentDirs = mutableStateListOf<UDTDatabase.DirRecord>()
+        
+        @Composable
+        override fun CreateState(params: Unit): MainPageState {
+            LaunchedEffect(currentEntry, currentPath) { // 监听路径变化
+                val entry = currentEntry
+                if (entry != null) {
+                    currentFiles.clear()
+                    currentDirs.clear()
+                    currentFiles.addAll(UDTDatabase.getFiles(entry, currentPath))
+                    currentDirs.addAll(UDTDatabase.getDirs(entry, currentPath))
+                }
+            }
+            return MainPageState(
+                entrys, currentEntry, currentPath, currentFiles, currentDirs,
+                action = {
+                    actionExecute(params, it)
+                }
+            )
+        }
+
+        override fun actionExecute(params: Unit, action: MainPageAction) {
+            when (action) {
+                is MainPageAction.IntoDirectory -> {
+//                    // 进入目录时更新路径
+//                    currentPath = "${action.dir.relationDirPath}${File.separator}"
+                }
+
+                is MainPageAction.OutOfDirectory -> {
+//                    // 返回上一级目录
+//                    currentPath = currentPath.substringBeforeLast(File.separator).substringBeforeLast(File.separator)
+                }
+            }
+        }
+    }
+
     sealed class MainPageAction : AbsUIAction() {
-        object OnClick : MainPageAction()
+        data class IntoDirectory(val dir: UDTDatabase.DirRecord) : MainPageAction()
+        data object OutOfDirectory : MainPageAction()
     }
 }
 
@@ -80,7 +115,12 @@ fun DrawerUI() {
 
 @Preview
 @Composable
-fun FileBrowserUI(entrys: List<UDTDatabase.DirTreeEntry>) {
+fun FileBrowserUI(
+    entrys: List<UDTDatabase.DirTreeEntry>,
+    currentEntry: UDTDatabase.DirTreeEntry?,
+    currentFiles: List<UDTDatabase.FileRecord>,
+    currentDirs: List<UDTDatabase.DirRecord>
+) {
     Row {
         LazyColumn {
             items(entrys) {
@@ -99,7 +139,12 @@ fun FileBrowserUI(entrys: List<UDTDatabase.DirTreeEntry>) {
             }
         }
         LazyColumn(Modifier.weight(1f)) {
-
+            items(currentFiles, key = { it.relationFilePath }) {
+                FileItemUI(it)
+            }
+            items(currentDirs, key = { it.relationDirPath }) {
+                DirItemUI(it)
+            }
         }
     }
 }
@@ -117,6 +162,7 @@ fun FileItemUI(file: UDTDatabase.FileRecord) {
                 style = MaterialTheme.typography.titleLarge
             )
             Text(storage(file.size))
+            Text(file.relationFilePath)
         }
     }
 }
@@ -143,35 +189,7 @@ private fun main() {
             onCloseRequest = ::exitApplication,
             title = "UDTUltra",
         ) {
-//            FileBrowserUI(
-//                listOf(
-//                    UDTDatabase.DirTreeEntry(
-//                        name = "U盘1",
-//                        target = File("D:\\"),
-//                        id = "1",
-//                        totalSpace = 1000000000000,
-//                        freeSpace = 500000000000
-//                    ),
-//                    UDTDatabase.DirTreeEntry(
-//                        name = "U盘2",
-//                        target = File("D:\\"),
-//                        id = "2",
-//                        totalSpace = 31000000000000,
-//                        freeSpace = 500000000000
-//                    )
-//                )
-//            )
-            FileItemUI(
-                UDTDatabase.FileRecord(
-                    entryId = "1",
-                    filePath = "D:\\1.txt",
-                    fileName = "1.txt",
-                    size = 1000000000000,
-                    createDate = 1000000000000,
-                    modifierData = 1000000000000,
-                    status = 0
-                )
-            )
+            MainPage.Main(Unit)
         }
     }
 }

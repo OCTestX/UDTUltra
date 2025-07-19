@@ -2,6 +2,7 @@ package io.github.octest.udtultra.repository
 
 import io.github.octest.udtultra.Config
 import io.github.octest.udtultra.repository.FileTreeManager.getFilePathHex16
+import io.github.octest.udtultra.repository.FileTreeManager.getRelationPath
 import io.github.octest.udtultra.utils.createTableIfNotExists
 import io.github.octestx.basic.multiplatform.common.utils.RateLimitInputStream
 import kotlinx.coroutines.Dispatchers
@@ -62,17 +63,18 @@ object UDTDatabase {
         ktormDatabase.update(Files) {
             set(it.status, 1)
             where {
-                it.filePath.eq(file.absolutePath ?: "")
+                it.filePath.eq(getRelationPath(entry.target, file))
             }
         }
         println("SavingFile: $file")
         ktormDatabase.insert(Files) {
             set(it.entryId, entry.id)
-            set(it.filePath, file.absolutePath ?: "")
+            set(it.filePath, getRelationPath(entry.target, file))
             set(it.fileName, file.name)
+            set(it.parentDir, getRelationPath(entry.target, file.parentFile))
             set(it.size, file.length())
             set(it.createDate, file.lastModified())
-            set(it.modifierData, file.lastModified())
+            set(it.modifierDate, file.lastModified())
             set(it.status, 0) // status 设置为 0
         }
         val targetFile = FileTreeManager.getFile(entry, getFilePathHex16(file))
@@ -85,18 +87,22 @@ object UDTDatabase {
         ktormDatabase.update(Files) {
             set(it.status, 2)
             where {
-                it.filePath.eq(file.absolutePath ?: "")
+                it.filePath.eq(getRelationPath(entry.target, file))
             }
         }
     }
 
-    fun writeDirInfo(dir: File) {
+    fun writeDirInfo(entry: DirTreeEntry, dir: File) {
         ktormDatabase.insert(Dirs) {
-            set(it.entryId, dir.absolutePath)
-            set(it.dirPath, dir.absolutePath)
+            set(it.entryId, entry.id)
+            set(it.dirPath, getRelationPath(entry.target, dir))
+            set(
+                it.parentDir,
+                getRelationPath(entry.target, dir.parentFile)
+            ) // if equals to entry.target, parentDir is null
             set(it.fileName, dir.name)
             set(it.createDate, dir.lastModified())
-            set(it.modifierData, dir.lastModified())
+            set(it.modifierDate, dir.lastModified())
         }
     }
 
@@ -108,7 +114,7 @@ object UDTDatabase {
                 val recordStatus = ktormDatabase
                     .from(Files)
                     .select()
-                    .where { Files.filePath eq file.absolutePath }
+                    .where { Files.filePath eq (getRelationPath(entry.target, file)) }
                     .map {
                         it[Files.status]
                     }.firstOrNull()
@@ -122,13 +128,13 @@ object UDTDatabase {
                 val record = ktormDatabase
                     .from(Dirs)
                     .select()
-                    .where { Dirs.dirPath eq file.absolutePath }
+                    .where { Dirs.dirPath eq (getRelationPath(entry.target, file)) }
                     .map {
                         it[Dirs.dirPath]
                     }.firstOrNull()
 
                 if (record == null) {
-                    writeDirInfo(file)
+                    writeDirInfo(entry, file)
                 } else {
                     println("SKIPDir: $file")
                 }
@@ -137,32 +143,77 @@ object UDTDatabase {
     }
 
     fun getEntrys(): List<DirTreeEntry> {
-        TODO()
+        return ktormDatabase
+            .from(Entrys)
+            .select()
+            .map {
+                DirTreeEntry(
+                    name = it[Entrys.name] ?: "",
+                    target = File(it[Entrys.name] ?: ""),
+                    id = it[Entrys.id] ?: "",
+                    totalSpace = it[Entrys.totalSpace] ?: 0,
+                    freeSpace = it[Entrys.freeSpace] ?: 0,
+                )
+            }
     }
     fun getFiles(entry: DirTreeEntry, path: String = ""): List<FileRecord> {
-        TODO()
+        return ktormDatabase
+            .from(Files)
+            .select()
+            .where {
+                (Files.entryId eq entry.id) and (Files.parentDir eq path)
+            }
+            .map {
+                FileRecord(
+                    entryId = it[Files.entryId] ?: "",
+                    relationFilePath = it[Files.filePath] ?: "",
+                    fileName = it[Files.fileName] ?: "",
+                    parentDir = it[Files.parentDir] ?: "",
+                    size = it[Files.size] ?: 0,
+                    createDate = it[Files.createDate] ?: 0,
+                    modifierDate = it[Files.modifierDate] ?: 0,
+                    status = it[Files.status] ?: 0
+                )
+            }
     }
 
     fun getDirs(entry: DirTreeEntry, path: String = ""): List<DirRecord> {
-        TODO()
+        return ktormDatabase
+            .from(Dirs)
+            .select()
+            .where {
+                (Dirs.entryId eq entry.id) and (Dirs.parentDir eq path)
+            }
+            .map {
+                DirRecord(
+                    entryId = it[Dirs.entryId] ?: "",
+                    relationDirPath = it[Dirs.dirPath] ?: "",
+                    dirName = it[Dirs.fileName] ?: "",
+                    parentDir = it[Dirs.parentDir] ?: "",
+                    createDate = it[Dirs.createDate] ?: 0,
+                    modifierDate = it[Dirs.modifierDate] ?: 0,
+                )
+            }
     }
 
     data class FileRecord(
         val entryId: String,
-        val filePath: String,
+        val relationFilePath: String,
         val fileName: String,
+        val parentDir: String?,
         val size: Long,
         val createDate: Long,
-        val modifierData: Long,
+        val modifierDate: Long,
         val status: Int,
     )
 
     data class DirRecord(
         val entryId: String,
-        val dirPath: String,
+        val relationDirPath: String,
         val dirName: String,
+        val parentDir: String?,
         val createDate: Long,
-        val modifierData: Long,
+        val modifierDate: Long,
     )
 
     data class DirTreeEntry(
@@ -191,19 +242,21 @@ object UDTDatabase {
 
     object Files : Table<Nothing>("files") {
         val entryId = varchar("entryId")
-        val filePath = varchar("filePathHex16").primaryKey()
+        val filePath = varchar("filePath").primaryKey()
         val fileName = varchar("fileName")
+        val parentDir = varchar("parentDir")
         val size = long("size")
         val createDate = long("createDate")
-        val modifierData = long("modifierData")
+        val modifierDate = long("modifierDate")
         val status = int("status")
     }
 
     object Dirs : Table<Nothing>("dirs") {
         val entryId = varchar("entryId")
         val dirPath = varchar("dirPath").primaryKey()
-        val fileName = varchar("fileName")
+        val fileName = varchar("dirName")
+        val parentDir = varchar("parentDir")
         val createDate = long("createDate")
-        val modifierData = long("modifierData")
+        val modifierDate = long("modifierDate")
     }
 }

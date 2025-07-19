@@ -41,6 +41,17 @@ object FileTreeManager {
         }
     }
 
+    fun getRelationPath(root: File, file: File): String {
+        if (root.absolutePath == file.absolutePath) return ""
+        return try {
+            val path = file.absolutePath.substring(root.absolutePath.length + 1)
+            println(path)
+            path
+        } catch (e: Throwable) {
+            println("ERROR: $root - $file")
+            throw e
+        }
+    }
 }
 
 //private fun main() {
