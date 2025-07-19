@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -304,9 +303,9 @@ fun FileBrowserUI(
                                 DelayShowAnimationFromTopLeft(
                                     modifier = Modifier.animateItem()
                                 ) {
-                                    FileItemUI(
-                                        file = file
-                                    )
+                                    FileItemUI(file = file) {
+                                        TODO("点击文件时弹窗显示更详细信息，并且有导出按钮和发送到桌面按钮")
+                                    }
                                 }
                             }
                             // 目录项列表 - 添加动画效果
@@ -330,21 +329,6 @@ fun FileBrowserUI(
                 }
             }
         }
-    }
-}
-
-@Composable
-fun DelayShowAnimation2(
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    val alpha = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        delay(50)
-        alpha.animateTo(1f, animationSpec = tween(300))
-    }
-    Box(modifier.alpha(alpha.value)) {
-        content()
     }
 }
 

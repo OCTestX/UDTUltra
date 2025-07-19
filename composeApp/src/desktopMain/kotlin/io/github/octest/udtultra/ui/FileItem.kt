@@ -16,10 +16,11 @@ import org.jetbrains.compose.ui.tooling.preview.Preview
 @Composable
 fun FileItemUI(
     file: UDTDatabase.FileRecord,
-    modifier: Modifier = Modifier // 新增modifier参数支持动画
+    modifier: Modifier = Modifier,
+    click: () -> Unit
 ) {
     Card(
-        onClick = { /* 文件点击事件处理（待实现） */ },
+        onClick = { click() },
         modifier = modifier // 使用传入的modifier
             .padding(2.dp)
             .fillMaxWidth(),
