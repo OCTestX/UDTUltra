@@ -2,6 +2,7 @@ package io.github.octest.udtultra.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,15 +12,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import compose.icons.TablerIcons
+import compose.icons.tablericons.ArrowBack
 import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.github.octestx.basic.multiplatform.ui.ui.core.AbsUIPage
+import io.klogging.noCoLogger
 import org.jetbrains.compose.ui.tooling.preview.Preview
+import java.io.File
 
 object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageAction>(MainPageModel()) {
+    private val ologger = noCoLogger<MainPage>()
     @Composable
     override fun UI(state: MainPageState) {
-        FileBrowserUI(state.entrys, state.currentEntry, state.currentFiles, state.currentDirs)
+        FileBrowserUI(
+            state.entrys,
+            state.currentEntry,
+            state.currentPath,
+            state.currentFiles,
+            state.currentDirs,
+            intoDirectory = {
+                state.action(MainPageAction.IntoDirectory(it))
+            },
+            backDirectory = {
+                state.action(MainPageAction.BackDirectory)
+            })
     }
 
     data class MainPageState(
@@ -41,6 +58,7 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
         @Composable
         override fun CreateState(params: Unit): MainPageState {
             LaunchedEffect(currentEntry, currentPath) { // 监听路径变化
+                ologger.debug { "ReloadData: $currentPath" }
                 val entry = currentEntry
                 if (entry != null) {
                     currentFiles.clear()
@@ -59,22 +77,32 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
 
         override fun actionExecute(params: Unit, action: MainPageAction) {
             when (action) {
+                is MainPageAction.SwitchPath -> {
+                    // 切换路径
+                    val t1 =
+                        if (action.path.startsWith(File.separator)) action.path.removePrefix(File.separator) else action.path
+                    currentPath = if (t1.endsWith(File.separator)) {
+                        t1.removeSuffix(File.separator)
+                    } else t1
+                }
                 is MainPageAction.IntoDirectory -> {
-//                    // 进入目录时更新路径
-//                    currentPath = "${action.dir.relationDirPath}${File.separator}"
+                    actionExecute(params, MainPageAction.SwitchPath(currentPath + File.separator + action.dirName))
                 }
 
-                is MainPageAction.OutOfDirectory -> {
-//                    // 返回上一级目录
-//                    currentPath = currentPath.substringBeforeLast(File.separator).substringBeforeLast(File.separator)
+                is MainPageAction.BackDirectory -> {
+                    actionExecute(
+                        params,
+                        MainPageAction.SwitchPath(currentPath.removeSuffix(currentPath.split(File.separator).last()))
+                    )
                 }
             }
         }
     }
 
     sealed class MainPageAction : AbsUIAction() {
-        data class IntoDirectory(val dir: UDTDatabase.DirRecord) : MainPageAction()
-        data object OutOfDirectory : MainPageAction()
+        data class SwitchPath(val path: String) : MainPageAction()
+        data class IntoDirectory(val dirName: String) : MainPageAction()
+        data object BackDirectory : MainPageAction()
     }
 }
 
@@ -118,12 +146,15 @@ fun DrawerUI() {
 fun FileBrowserUI(
     entrys: List<UDTDatabase.DirTreeEntry>,
     currentEntry: UDTDatabase.DirTreeEntry?,
+    currentPath: String,
     currentFiles: List<UDTDatabase.FileRecord>,
-    currentDirs: List<UDTDatabase.DirRecord>
+    currentDirs: List<UDTDatabase.DirRecord>,
+    intoDirectory: (String) -> Unit,
+    backDirectory: () -> Unit
 ) {
     Row {
         LazyColumn {
-            items(entrys) {
+            items(entrys, key = { it.id }) {
                 Card(onClick = {
 
                 }, Modifier.padding(6.dp)) {
@@ -138,12 +169,24 @@ fun FileBrowserUI(
                 }
             }
         }
-        LazyColumn(Modifier.weight(1f)) {
-            items(currentFiles, key = { it.relationFilePath }) {
-                FileItemUI(it)
+        Column(Modifier.weight(1f)) {
+            Row {
+                IconButton(onClick = {
+                    backDirectory()
+                }) {
+                    Icon(TablerIcons.ArrowBack, contentDescription = null)
+                }
+                Text(currentPath)
             }
-            items(currentDirs, key = { it.relationDirPath }) {
-                DirItemUI(it)
+            LazyColumn(Modifier.weight(1f)) {
+                items(currentFiles, key = { it.relationFilePath }) {
+                    FileItemUI(it)
+                }
+                items(currentDirs, key = { it.relationDirPath }) {
+                    DirItemUI(it) {
+                        intoDirectory(it.dirName)
+                    }
+                }
             }
         }
     }
@@ -154,26 +197,25 @@ fun FileBrowserUI(
 fun FileItemUI(file: UDTDatabase.FileRecord) {
     Card(onClick = {
 
-    }, Modifier.padding(6.dp)) {
-        Column(Modifier.padding(3.dp)) {
+    }, Modifier.padding(3.dp).fillMaxWidth()) {
+        Column(Modifier.padding(1.dp)) {
             Text(
                 file.fileName,
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.titleLarge
             )
             Text(storage(file.size))
-            Text(file.relationFilePath)
         }
     }
 }
 
 @Preview
 @Composable
-fun DirItemUI(dir: UDTDatabase.DirRecord) {
+fun DirItemUI(dir: UDTDatabase.DirRecord, click: () -> Unit) {
     Card(onClick = {
-
-    }, Modifier.padding(6.dp)) {
-        Column(Modifier.padding(3.dp)) {
+        click()
+    }, Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(1.dp)) {
             Text(
                 dir.dirName,
                 color = MaterialTheme.colorScheme.primary,
