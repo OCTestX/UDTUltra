@@ -1,13 +1,21 @@
 package io.github.octest.udtultra.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -17,8 +25,8 @@ import compose.icons.tablericons.Menu2
 import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.github.octestx.basic.multiplatform.ui.ui.core.AbsUIPage
-import io.github.octestx.basic.multiplatform.ui.ui.utils.DelayShowAnimation
 import io.klogging.noCoLogger
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import java.io.File
@@ -192,36 +200,43 @@ fun FileBrowserUI(
                     }
                 }
 
-                // 数据源列表
-                LazyColumn(
-                    Modifier
-                        .padding(4.dp)
-                ) {
-                    items(entrys, key = { it.id }) { entry ->
-                        val isSelected = currentEntry?.id == entry.id
-                        Card(
-                            onClick = {
-                                // 点击根目录时的处理逻辑
-                            },
-                            Modifier.padding(4.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                            ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp)
-                        ) {
-                            Column(Modifier.padding(6.dp)) {
-                                Text(
-                                    entry.name,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    "总共${storage(entry.totalSpace)}, 剩余${storage(entry.freeSpace)}",
-                                    style = MaterialTheme.typography.labelSmall
-                                )
+                // 数据源列表 - 手动创建滚动条
+                val drawerListState = rememberLazyListState()
+                Box(Modifier.padding(4.dp)) {
+                    LazyColumn(
+                        state = drawerListState,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(entrys, key = { it.id }) { entry ->
+                            val isSelected = currentEntry?.id == entry.id
+                            Card(
+                                onClick = {
+                                    // 点击根目录时的处理逻辑
+                                },
+                                Modifier.padding(4.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp)
+                            ) {
+                                Column(Modifier.padding(6.dp)) {
+                                    Text(
+                                        entry.name,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    Text(
+                                        "总共${storage(entry.totalSpace)}, 剩余${storage(entry.freeSpace)}",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
                             }
                         }
                     }
+                    VerticalScrollbar(
+                        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                        adapter = rememberScrollbarAdapter(drawerListState)
+                    )
                 }
             }
         }
@@ -272,39 +287,107 @@ fun FileBrowserUI(
                             .padding(16.dp)
                     )
                 } else {
-                    LazyColumn(
-                        Modifier
-                            .weight(1f)
-                            .padding(8.dp)
-                    ) {
-                        // 文件项列表 - 添加动画效果
-                        items(
-                            items = currentFiles,
-                            key = { it.relationFilePath }
-                        ) { file ->
-                            DelayShowAnimation(
-                                modifier = Modifier.animateItem()
-                            ) {
-                                FileItemUI(
-                                    file = file
-                                )
+                    // 文件/目录列表 - 手动创建滚动条
+                    val mainListState = rememberLazyListState()
+                    Box(Modifier.weight(1f)) {
+                        LazyColumn(
+                            state = mainListState,
+                            modifier = Modifier
+                                .padding(8.dp)
+                                .fillMaxSize()
+                        ) {
+                            // 文件项列表 - 添加动画效果
+                            items(
+                                items = currentFiles,
+                                key = { it.relationFilePath }
+                            ) { file ->
+                                DelayShowAnimationFromTopLeft(
+                                    modifier = Modifier.animateItem()
+                                ) {
+                                    FileItemUI(
+                                        file = file
+                                    )
+                                }
+                            }
+                            // 目录项列表 - 添加动画效果
+                            items(
+                                items = currentDirs,
+                                key = { it.relationDirPath }
+                            ) { dir ->
+                                DelayShowAnimationFromTopLeft(modifier = Modifier.animateItem()) {
+                                    DirItemUI(
+                                        dir = dir,
+                                        click = { intoDirectory(dir.dirName) }
+                                    )
+                                }
                             }
                         }
-                        // 目录项列表 - 添加动画效果
-                        items(
-                            items = currentDirs,
-                            key = { it.relationDirPath }
-                        ) { dir ->
-                            DelayShowAnimation(modifier = Modifier.animateItem()) {
-                                DirItemUI(
-                                    dir = dir,
-                                    click = { intoDirectory(dir.dirName) }
-                                )
-                            }
-                        }
+                        VerticalScrollbar(
+                            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                            adapter = rememberScrollbarAdapter(mainListState)
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun DelayShowAnimation2(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val alpha = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        delay(50)
+        alpha.animateTo(1f, animationSpec = tween(300))
+    }
+    Box(modifier.alpha(alpha.value)) {
+        content()
+    }
+}
+
+@Composable
+fun DelayShowAnimationFromTopLeft(
+    delay: Long = 10,
+    animationTime: Int = 500,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    // 透明度动画
+    val alpha = remember { Animatable(0.1f) }
+    // 位移动画（左上角外偏移）
+    val offset = remember { Animatable(-50f) }
+
+    LaunchedEffect(Unit) {
+        delay(delay)
+        // 同时启动透明度与位移动画
+        launch {
+            alpha.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessLow
+                )
+            )
+        }
+        launch {
+            offset.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessLow
+                )
+            )
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .alpha(alpha.value)
+            .offset(x = offset.value.dp, y = offset.value.dp)
+    ) {
+        content()
     }
 }
