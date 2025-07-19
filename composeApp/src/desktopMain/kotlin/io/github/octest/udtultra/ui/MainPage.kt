@@ -8,15 +8,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
 import compose.icons.tablericons.ArrowBack
 import compose.icons.tablericons.File
 import compose.icons.tablericons.Folder
+import compose.icons.tablericons.Menu2
 import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.github.octestx.basic.multiplatform.ui.ui.core.AbsUIPage
 import io.klogging.noCoLogger
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import java.io.File
 
@@ -143,6 +146,7 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
  * @param intoDirectory 进入目录回调
  * @param backDirectory 返回目录回调
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Preview
 @Composable
 fun FileBrowserUI(
@@ -154,92 +158,120 @@ fun FileBrowserUI(
     intoDirectory: (String) -> Unit,
     backDirectory: () -> Unit
 ) {
-    Row(
-        Modifier
-            .fillMaxSize()
-    ) {
-        // 左侧数据源优化：减少 padding
-        LazyColumn(
-            Modifier
-                .widthIn(max = 240.dp)
-                .padding(4.dp) // 从 8.dp 调整为 4.dp
-        ) {
-            items(entrys, key = { it.id }) { entry ->
-                val isSelected = currentEntry?.id == entry.id
-                Card(
-                    onClick = {
-                        // 点击根目录时的处理逻辑
-                    },
-                    Modifier.padding(4.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp)
+    // 添加控制侧滑栏的状态
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier.width(240.dp)
+            ) {
+                // 顶部添加圆角Row布局
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.medium)
+                        .padding(8.dp)
                 ) {
-                    Column(Modifier.padding(6.dp)) {
+                    Row(
+                        modifier = Modifier.padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            entry.name,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.titleMedium
+                            "数据源",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
-                        Text(
-                            "总共${storage(entry.totalSpace)}, 剩余${storage(entry.freeSpace)}",
-                            style = MaterialTheme.typography.labelSmall
-                        )
+                    }
+                }
+
+                // 数据源列表
+                LazyColumn(
+                    Modifier
+                        .padding(4.dp)
+                ) {
+                    items(entrys, key = { it.id }) { entry ->
+                        val isSelected = currentEntry?.id == entry.id
+                        Card(
+                            onClick = {
+                                // 点击根目录时的处理逻辑
+                            },
+                            Modifier.padding(4.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp)
+                        ) {
+                            Column(Modifier.padding(6.dp)) {
+                                Text(
+                                    entry.name,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    "总共${storage(entry.totalSpace)}, 剩余${storage(entry.freeSpace)}",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
-
-        // 右侧主内容区：减少 padding
-        Column(Modifier.weight(1f).padding(4.dp)) { // 从 8.dp 调整为 4.dp
-            // 路径导航栏优化
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.padding(8.dp).clip(MaterialTheme.shapes.large)
+    ) {
+        Scaffold(
+            topBar = {
+                val scope = rememberCoroutineScope()
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = currentPath,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    navigationIcon = {
+                        // 添加菜单按钮控制侧滑栏
+                        IconButton(onClick = {
+                            scope.launch {
+                                drawerState.open()
+                            }
+                        }) {
+                            Icon(TablerIcons.Menu2, contentDescription = "打开菜单")
+                        }
+                    },
+                    actions = {
+                        // 保留返回按钮
+                        IconButton(onClick = backDirectory) {
+                            Icon(TablerIcons.ArrowBack, contentDescription = "返回上一级")
+                        }
+                    }
+                )
+            }
+        ) { innerPadding ->
+            Column(
+                Modifier
+                    .padding(innerPadding)
+                    .padding(4.dp)
             ) {
-                Row(
+                // 文件/目录列表优化
+                LazyColumn(
                     Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .padding(8.dp)
                 ) {
-                    // 返回按钮增强
-                    IconButton(
-                        onClick = backDirectory,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            TablerIcons.ArrowBack,
-                            contentDescription = "返回上一级",
-                            modifier = Modifier.size(20.dp)
-                        )
+                    // 文件项列表
+                    items(currentFiles, key = { it.relationFilePath }) {
+                        FileItemUI(it)
                     }
-                    // 路径文本优化
-                    Text(
-                        text = currentPath,
-                        modifier = Modifier
-                            .padding(start = 8.dp)
-                            .align(Alignment.CenterVertically),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
-            }
 
-            // 文件/目录列表优化
-            LazyColumn(
-                Modifier
-                    .weight(1f)
-                    .padding(8.dp)
-            ) {
-                // 文件项列表
-                items(currentFiles, key = { it.relationFilePath }) {
-                    FileItemUI(it)
-                }
-
-                // 目录项列表
-                items(currentDirs, key = { it.relationDirPath }) { dir ->
-                    DirItemUI(dir) {
-                        intoDirectory(dir.dirName)
+                    // 目录项列表
+                    items(currentDirs, key = { it.relationDirPath }) { dir ->
+                        DirItemUI(dir) {
+                            intoDirectory(dir.dirName)
+                        }
                     }
                 }
             }
