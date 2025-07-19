@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
 import compose.icons.tablericons.ArrowBack
@@ -153,12 +154,15 @@ fun FileBrowserUI(
     intoDirectory: (String) -> Unit,
     backDirectory: () -> Unit
 ) {
-    Row {
-        // 左侧数据源优化：添加边框和悬停效果
+    Row(
+        Modifier
+            .fillMaxSize()
+    ) {
+        // 左侧数据源优化：减少 padding
         LazyColumn(
             Modifier
-                .width(240.dp)
-                .padding(8.dp)
+                .widthIn(max = 240.dp)
+                .padding(4.dp) // 从 8.dp 调整为 4.dp
         ) {
             items(entrys, key = { it.id }) { entry ->
                 val isSelected = currentEntry?.id == entry.id
@@ -187,12 +191,12 @@ fun FileBrowserUI(
             }
         }
 
-        // 右侧主内容区
-        Column(Modifier.weight(1f)) {
+        // 右侧主内容区：减少 padding
+        Column(Modifier.weight(1f).padding(4.dp)) { // 从 8.dp 调整为 4.dp
             // 路径导航栏优化
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.padding(8.dp)
+                modifier = Modifier.padding(8.dp).clip(MaterialTheme.shapes.large)
             ) {
                 Row(
                     Modifier
@@ -215,7 +219,7 @@ fun FileBrowserUI(
                         text = currentPath,
                         modifier = Modifier
                             .padding(start = 8.dp)
-                            .alignByBaseline(),
+                            .align(Alignment.CenterVertically),
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
