@@ -154,7 +154,7 @@ fun FileBrowserUI(
     backDirectory: () -> Unit
 ) {
     Row {
-        // 左侧目录树优化：添加边框和悬停效果
+        // 左侧数据源优化：添加边框和悬停效果
         LazyColumn(
             Modifier
                 .width(240.dp)
