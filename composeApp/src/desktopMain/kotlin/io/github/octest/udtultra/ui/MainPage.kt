@@ -10,8 +10,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.application
 import compose.icons.TablerIcons
 import compose.icons.tablericons.ArrowBack
 import io.github.octest.udtultra.repository.UDTDatabase
@@ -21,6 +19,10 @@ import io.klogging.noCoLogger
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import java.io.File
 
+/**
+ * 主页面对象，继承自AbsUIPage
+ * 管理文件浏览相关状态和UI展示
+ */
 object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageAction>(MainPageModel()) {
     private val ologger = noCoLogger<MainPage>()
     @Composable
@@ -39,10 +41,19 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
             })
     }
 
+    /**
+     * 页面状态类
+     * @param entrys 根目录条目列表
+     * @param currentEntry 当前选中的根目录
+     * @param currentPath 当前浏览路径
+     * @param currentFiles 当前目录下的文件列表
+     * @param currentDirs 当前目录下的子目录列表
+     * @param action 事件回调
+     */
     data class MainPageState(
         val entrys: List<UDTDatabase.DirTreeEntry>,
         val currentEntry: UDTDatabase.DirTreeEntry?,
-        val currentPath: String, // 新增当前路径状态
+        val currentPath: String,
         val currentFiles: List<UDTDatabase.FileRecord>,
         val currentDirs: List<UDTDatabase.DirRecord>,
         val action: (MainPageAction) -> Unit,
@@ -51,18 +62,23 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
     class MainPageModel() : AbsUIModel<Unit, MainPageState, MainPageAction>() {
         private val entrys = UDTDatabase.getEntrys()
         private var currentEntry: UDTDatabase.DirTreeEntry? by mutableStateOf(entrys.firstOrNull())
-        private var currentPath: String by mutableStateOf("") // 新增路径状态管理
+        private var currentPath: String by mutableStateOf("")
         private val currentFiles = mutableStateListOf<UDTDatabase.FileRecord>()
         private val currentDirs = mutableStateListOf<UDTDatabase.DirRecord>()
-        
+
+        /**
+         * 创建页面状态
+         * 包含LaunchedEffect监听路径变化
+         */
         @Composable
         override fun CreateState(params: Unit): MainPageState {
-            LaunchedEffect(currentEntry, currentPath) { // 监听路径变化
+            LaunchedEffect(currentEntry, currentPath) {
                 ologger.debug { "ReloadData: $currentPath" }
                 val entry = currentEntry
                 if (entry != null) {
                     currentFiles.clear()
                     currentDirs.clear()
+                    // 加载当前目录下的文件和子目录
                     currentFiles.addAll(UDTDatabase.getFiles(entry, currentPath))
                     currentDirs.addAll(UDTDatabase.getDirs(entry, currentPath))
                 }
@@ -75,21 +91,26 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
             )
         }
 
+        /**
+         * 事件处理器
+         * 处理路径切换、进入目录、返回目录等操作
+         */
         override fun actionExecute(params: Unit, action: MainPageAction) {
             when (action) {
                 is MainPageAction.SwitchPath -> {
-                    // 切换路径
-                    val t1 =
-                        if (action.path.startsWith(File.separator)) action.path.removePrefix(File.separator) else action.path
+                    // 处理路径切换，标准化路径格式
+                    val t1 = if (action.path.startsWith(File.separator))
+                        action.path.removePrefix(File.separator) else action.path
                     currentPath = if (t1.endsWith(File.separator)) {
                         t1.removeSuffix(File.separator)
                     } else t1
                 }
                 is MainPageAction.IntoDirectory -> {
+                    // 进入子目录：拼接新路径
                     actionExecute(params, MainPageAction.SwitchPath(currentPath + File.separator + action.dirName))
                 }
-
                 is MainPageAction.BackDirectory -> {
+                    // 返回上一级目录：移除当前路径最后一段
                     actionExecute(
                         params,
                         MainPageAction.SwitchPath(currentPath.removeSuffix(currentPath.split(File.separator).last()))
@@ -99,6 +120,10 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
         }
     }
 
+    /**
+     * 页面动作密封类
+     * 包含路径切换、进入目录、返回目录等操作
+     */
     sealed class MainPageAction : AbsUIAction() {
         data class SwitchPath(val path: String) : MainPageAction()
         data class IntoDirectory(val dirName: String) : MainPageAction()
@@ -106,41 +131,17 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
     }
 }
 
-@Preview
-@Composable
-fun DrawerUI() {
-    LazyColumn(Modifier.padding(15.dp)) {
-        item {
-            Card {
-                Column(Modifier.padding(8.dp)) {
-                    Text("运行u盘小偷")
-                    Switch(checked = true, onCheckedChange = {})
-                }
-            }
-        }
-        item {
-            OutlinedButton(onClick = {}) {
-                Text("白名单管理")
-            }
-        }
-        item {
-            OutlinedButton(onClick = {}) {
-                Text("复制速度管理")
-            }
-        }
-        item {
-            OutlinedButton(onClick = {}) {
-                Text("文件过滤管理")
-            }
-        }
-        item {
-            OutlinedButton(onClick = {}) {
-                Text("MasterU盘管理")
-            }
-        }
-    }
-}
-
+/**
+ * 文件浏览器UI组件
+ * 展示目录树和文件列表
+ * @param entrys 根目录条目
+ * @param currentEntry 当前根目录
+ * @param currentPath 当前路径
+ * @param currentFiles 当前文件列表
+ * @param currentDirs 当前目录列表
+ * @param intoDirectory 进入目录回调
+ * @param backDirectory 返回目录回调
+ */
 @Preview
 @Composable
 fun FileBrowserUI(
@@ -153,10 +154,11 @@ fun FileBrowserUI(
     backDirectory: () -> Unit
 ) {
     Row {
+        // 左侧目录树
         LazyColumn {
             items(entrys, key = { it.id }) {
                 Card(onClick = {
-
+                    // 点击根目录时的处理逻辑
                 }, Modifier.padding(6.dp)) {
                     Column(Modifier.padding(3.dp)) {
                         Text(
@@ -169,8 +171,10 @@ fun FileBrowserUI(
                 }
             }
         }
+        // 右侧文件列表
         Column(Modifier.weight(1f)) {
             Row {
+                // 返回按钮和路径显示
                 IconButton(onClick = {
                     backDirectory()
                 }) {
@@ -178,6 +182,7 @@ fun FileBrowserUI(
                 }
                 Text(currentPath)
             }
+            // 文件和子目录列表
             LazyColumn(Modifier.weight(1f)) {
                 items(currentFiles, key = { it.relationFilePath }) {
                     FileItemUI(it)
@@ -192,11 +197,15 @@ fun FileBrowserUI(
     }
 }
 
+/**
+ * 文件项UI组件
+ * 展示单个文件信息
+ */
 @Preview
 @Composable
 fun FileItemUI(file: UDTDatabase.FileRecord) {
     Card(onClick = {
-
+        // 文件点击事件处理（待实现）
     }, Modifier.padding(3.dp).fillMaxWidth()) {
         Column(Modifier.padding(1.dp)) {
             Text(
@@ -209,6 +218,10 @@ fun FileItemUI(file: UDTDatabase.FileRecord) {
     }
 }
 
+/**
+ * 目录项UI组件
+ * 展示单个目录信息
+ */
 @Preview
 @Composable
 fun DirItemUI(dir: UDTDatabase.DirRecord, click: () -> Unit) {
@@ -221,17 +234,6 @@ fun DirItemUI(dir: UDTDatabase.DirRecord, click: () -> Unit) {
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.titleLarge
             )
-        }
-    }
-}
-
-private fun main() {
-    application {
-        Window(
-            onCloseRequest = ::exitApplication,
-            title = "UDTUltra",
-        ) {
-            MainPage.Main(Unit)
         }
     }
 }
