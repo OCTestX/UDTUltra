@@ -1,5 +1,6 @@
 package io.github.octest.udtultra.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,12 +13,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
 import compose.icons.tablericons.ArrowBack
-import compose.icons.tablericons.File
-import compose.icons.tablericons.Folder
 import compose.icons.tablericons.Menu2
 import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.github.octestx.basic.multiplatform.ui.ui.core.AbsUIPage
+import io.github.octestx.basic.multiplatform.ui.ui.utils.DelayShowAnimation
 import io.klogging.noCoLogger
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.ui.tooling.preview.Preview
@@ -37,6 +37,7 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
             state.currentPath,
             state.currentFiles,
             state.currentDirs,
+            canBack = state.canBack,
             intoDirectory = {
                 state.action(MainPageAction.IntoDirectory(it))
             },
@@ -60,6 +61,7 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
         val currentPath: String,
         val currentFiles: List<UDTDatabase.FileRecord>,
         val currentDirs: List<UDTDatabase.DirRecord>,
+        val canBack: Boolean,
         val action: (MainPageAction) -> Unit,
     ) : AbsUIState<MainPageAction>()
 
@@ -88,7 +90,7 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
                 }
             }
             return MainPageState(
-                entrys, currentEntry, currentPath, currentFiles, currentDirs,
+                entrys, currentEntry, currentPath, currentFiles, currentDirs, canBack = currentPath.isNotEmpty(),
                 action = {
                     actionExecute(params, it)
                 }
@@ -155,11 +157,14 @@ fun FileBrowserUI(
     currentPath: String,
     currentFiles: List<UDTDatabase.FileRecord>,
     currentDirs: List<UDTDatabase.DirRecord>,
+    canBack: Boolean,
     intoDirectory: (String) -> Unit,
     backDirectory: () -> Unit
 ) {
     // 添加控制侧滑栏的状态
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    // 添加列表加载状态
+    val isLoading by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -244,8 +249,10 @@ fun FileBrowserUI(
                     },
                     actions = {
                         // 保留返回按钮
-                        IconButton(onClick = backDirectory) {
-                            Icon(TablerIcons.ArrowBack, contentDescription = "返回上一级")
+                        AnimatedVisibility(canBack) {
+                            IconButton(onClick = backDirectory) {
+                                Icon(TablerIcons.ArrowBack, contentDescription = "返回上一级")
+                            }
                         }
                     }
                 )
@@ -256,91 +263,48 @@ fun FileBrowserUI(
                     .padding(innerPadding)
                     .padding(4.dp)
             ) {
-                // 文件/目录列表优化
-                LazyColumn(
-                    Modifier
-                        .weight(1f)
-                        .padding(8.dp)
-                ) {
-                    // 文件项列表
-                    items(currentFiles, key = { it.relationFilePath }) {
-                        FileItemUI(it)
-                    }
-
-                    // 目录项列表
-                    items(currentDirs, key = { it.relationDirPath }) { dir ->
-                        DirItemUI(dir) {
-                            intoDirectory(dir.dirName)
+                // 文件/目录列表优化 - 添加动画效果
+                if (isLoading) {
+                    // 加载时的动画提示
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(16.dp)
+                    )
+                } else {
+                    LazyColumn(
+                        Modifier
+                            .weight(1f)
+                            .padding(8.dp)
+                    ) {
+                        // 文件项列表 - 添加动画效果
+                        items(
+                            items = currentFiles,
+                            key = { it.relationFilePath }
+                        ) { file ->
+                            DelayShowAnimation(
+                                modifier = Modifier.animateItem()
+                            ) {
+                                FileItemUI(
+                                    file = file
+                                )
+                            }
+                        }
+                        // 目录项列表 - 添加动画效果
+                        items(
+                            items = currentDirs,
+                            key = { it.relationDirPath }
+                        ) { dir ->
+                            DelayShowAnimation(modifier = Modifier.animateItem()) {
+                                DirItemUI(
+                                    dir = dir,
+                                    click = { intoDirectory(dir.dirName) }
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
-    }
-}
-
-// 文件项UI优化：添加图标和悬停效果
-@Preview
-@Composable
-fun FileItemUI(file: UDTDatabase.FileRecord) {
-    Card(
-        onClick = { /* 文件点击事件处理（待实现） */ },
-        Modifier
-            .padding(2.dp)
-            .fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            Modifier.padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = TablerIcons.File,
-                contentDescription = "文件图标",
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.secondary
-            )
-            Column(Modifier.padding(start = 8.dp)) {
-                Text(
-                    file.fileName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    storage(file.size),
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
-        }
-    }
-}
-
-// 目录项UI优化：添加图标和交互反馈
-@Preview
-@Composable
-fun DirItemUI(dir: UDTDatabase.DirRecord, click: () -> Unit) {
-    Card(
-        onClick = click,
-        Modifier
-            .padding(2.dp)
-            .fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            Modifier.padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = TablerIcons.Folder,
-                contentDescription = "目录图标",
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                dir.dirName,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 8.dp)
-            )
         }
     }
 }

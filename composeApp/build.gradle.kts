@@ -25,6 +25,7 @@ kotlin {
 
             implementation("io.github.octestx:basic-multiplatform-lib:0.1.4-DownVerB")
             implementation("io.github.octestx:basic-multiplatform-ui-lib:0.1.4-DownVerB2")
+
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
