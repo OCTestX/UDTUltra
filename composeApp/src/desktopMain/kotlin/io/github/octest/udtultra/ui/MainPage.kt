@@ -21,7 +21,10 @@ import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
 import compose.icons.tablericons.ArrowBack
 import compose.icons.tablericons.Menu2
+import io.github.octest.udtultra.logic.WorkStacker
+import io.github.octest.udtultra.repository.FileTreeManager
 import io.github.octest.udtultra.repository.UDTDatabase
+import io.github.octest.udtultra.ui.MainPage.MainPageAction.SwitchPath
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.github.octestx.basic.multiplatform.ui.ui.core.AbsUIPage
 import io.klogging.noCoLogger
@@ -55,7 +58,7 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
 
             },
             sendFileToDesktop = {
-
+                state.action(MainPageAction.SendFileToDesktop(it))
             },
             deleteAndBanFile = {
                 TODO()
@@ -120,7 +123,7 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
          */
         override fun actionExecute(params: Unit, action: MainPageAction) {
             when (action) {
-                is MainPageAction.SwitchPath -> {
+                is SwitchPath -> {
                     // 处理路径切换，标准化路径格式
                     val t1 = if (action.path.startsWith(File.separator))
                         action.path.removePrefix(File.separator) else action.path
@@ -130,14 +133,43 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
                 }
                 is MainPageAction.IntoDirectory -> {
                     // 进入子目录：拼接新路径
-                    actionExecute(params, MainPageAction.SwitchPath(currentPath + File.separator + action.dirName))
+                    actionExecute(params, SwitchPath(currentPath + File.separator + action.dirName))
                 }
                 is MainPageAction.BackDirectory -> {
                     // 返回上一级目录：移除当前路径最后一段
                     actionExecute(
                         params,
-                        MainPageAction.SwitchPath(currentPath.removeSuffix(currentPath.split(File.separator).last()))
+                        SwitchPath(currentPath.removeSuffix(currentPath.split(File.separator).last()))
                     )
+                }
+
+                is MainPageAction.DeleteAndBanFile -> TODO()
+                is MainPageAction.SendFileTo -> TODO()
+                is MainPageAction.SendFileToDesktop -> {
+                    val entry = currentEntry
+                    if (entry != null) {
+                        val target = File("/home/octest/Desktop", action.file.fileName)
+                        if (target.exists()) {
+                            target.delete()
+                        }
+                        val source = FileTreeManager.getExitsFile(entry, action.file.relationFilePath)
+                        source.onSuccess {
+                            WorkStacker.putWork("正在复制从${it.absolutePath}到${target.absolutePath}") {
+                                try {
+                                    it.copyTo(target)
+//                                toast.applyShow(ToastModel("复制完成",  type = ToastModel.Type.Info))
+                                    ologger.info { "复制完成" }
+                                } catch (e: Exception) {
+//                                toast.applyShow(ToastModel("复制过程中失败失败: ${e.message}",  type = ToastModel.Type.Error))
+                                    ologger.error(e) { "复制过程中失败失败: ${e.message}" }
+                                }
+                            }
+                        }
+                        source.onFailure {
+//                            toast.applyShow(ToastModel("复制失败",  type = ToastModel.Type.Error))
+                            ologger.error(it) { "复制失败" }
+                        }
+                    }
                 }
             }
         }
@@ -151,6 +183,9 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
         data class SwitchPath(val path: String) : MainPageAction()
         data class IntoDirectory(val dirName: String) : MainPageAction()
         data object BackDirectory : MainPageAction()
+        data class SendFileTo(val file: UDTDatabase.FileRecord) : MainPageAction()
+        data class SendFileToDesktop(val file: UDTDatabase.FileRecord) : MainPageAction()
+        data class DeleteAndBanFile(val file: UDTDatabase.FileRecord) : MainPageAction()
     }
 }
 

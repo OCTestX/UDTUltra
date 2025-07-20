@@ -6,7 +6,7 @@ import java.math.BigInteger
 
 object FileTreeManager {
     val storageDir = File(Config.appDir, "storage")
-    fun getFile(entry: UDTDatabase.DirTreeEntry, paths: List<String>): File {
+    fun linkFile(entry: UDTDatabase.DirTreeEntry, paths: List<String>): File {
         var file = File(storageDir, entry.id)
         for (path in paths) {
             file = File(file, path)
@@ -18,12 +18,32 @@ object FileTreeManager {
         return file
     }
 
-    fun getFilePathHex16(file: File): List<String> {
-        return toHex(file.absolutePath)
+    fun getExitsFile(entry: UDTDatabase.DirTreeEntry, path: String): Result<File> {
+        var file = File(storageDir, entry.id)
+        val hexs = getFilePathHex16(path)
+        for (hex in hexs) {
+            file = File(file, hex)
+        }
+        return if (file.exists()) {
+            Result.success(file)
+        } else {
+            Result.failure(Exception("File not found"))
+        }
+    }
+
+    fun getFilePathHex16(root: File, file: File): List<String> {
+        return toHex(getRelationPath(root, file))
+    }
+
+    fun getFilePathHex16(relationPath: String): List<String> {
+        return toHex(relationPath)
     }
 
     private fun toHex(path: String): List<String> {
-        return BigInteger(path.toByteArray()).toString(16).chunkedSequence(120).toList()
+        val hexs = BigInteger(path.toByteArray()).toString(16).chunkedSequence(120).toList()
+        return if (hexs.size > 1) {
+            hexs.subList(0, hexs.size - 1).map { "Fold-$it" } + hexs.last()
+        } else hexs
     }
 
     fun String.chunkedSequence(size: Int): Sequence<String> {
@@ -45,10 +65,9 @@ object FileTreeManager {
         if (root.absolutePath == file.absolutePath) return ""
         return try {
             val path = file.absolutePath.substring(root.absolutePath.length + 1)
-            println(path)
             path
         } catch (e: Throwable) {
-            println("ERROR: $root - $file")
+            println("ERROR: $file - $root")
             throw e
         }
     }

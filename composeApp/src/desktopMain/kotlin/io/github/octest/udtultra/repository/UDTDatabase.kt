@@ -5,6 +5,7 @@ import io.github.octest.udtultra.repository.FileTreeManager.getFilePathHex16
 import io.github.octest.udtultra.repository.FileTreeManager.getRelationPath
 import io.github.octest.udtultra.utils.createTableIfNotExists
 import io.github.octestx.basic.multiplatform.common.utils.RateLimitInputStream
+import io.klogging.noCoLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -18,6 +19,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 object UDTDatabase {
+    private val ologger = noCoLogger<UDTDatabase>()
     val DBFile = File(Config.appDir, "db.db")
     private val ktormDatabase: Database by lazy {
         Database.connect(
@@ -66,7 +68,7 @@ object UDTDatabase {
                 it.filePath.eq(getRelationPath(entry.target, file))
             }
         }
-        println("SavingFile: $file")
+        ologger.info { "SavingFile: $file" }
         ktormDatabase.insert(Files) {
             set(it.entryId, entry.id)
             set(it.filePath, getRelationPath(entry.target, file))
@@ -77,13 +79,13 @@ object UDTDatabase {
             set(it.modifierDate, file.lastModified())
             set(it.status, 0) // status 设置为 0
         }
-        val targetFile = FileTreeManager.getFile(entry, getFilePathHex16(file))
+        val targetFile = FileTreeManager.linkFile(entry, getFilePathHex16(entry.target, file))
         RateLimitInputStream(file.inputStream().apply { skipNBytes(targetFile.length()) }, Config.copySpeed).use { inputStream ->
             FileOutputStream(targetFile, true).use { outputStream ->
                 inputStream.transferTo(outputStream)
             }
         }
-        println("SaveFileDone: $file")
+        ologger.info { "SaveFileDone: $file" }
         ktormDatabase.update(Files) {
             set(it.status, 2)
             where {
