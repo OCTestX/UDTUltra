@@ -4,6 +4,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberTrayState
+import io.github.octest.udtultra.repository.SettingRepository
 import io.github.octestx.basic.multiplatform.common.BasicMultiplatformConfigModule
 import io.github.octestx.basic.multiplatform.common.JVMInitCenter
 import io.github.octestx.basic.multiplatform.ui.JVMUIInitCenter
@@ -20,6 +21,7 @@ fun main() {
         )
     }
     JVMInitCenter.init()
+    SettingRepository.init()
     application {
         val trayState = rememberTrayState()
         LaunchedEffect(Unit) {

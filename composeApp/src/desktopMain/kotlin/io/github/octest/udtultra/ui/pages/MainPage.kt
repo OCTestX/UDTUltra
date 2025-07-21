@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
 import compose.icons.tablericons.ArrowBack
 import compose.icons.tablericons.Menu2
+import compose.icons.tablericons.X
+import io.github.octest.udtultra.logic.Daemon
 import io.github.octest.udtultra.logic.WorkStacker
 import io.github.octest.udtultra.logic.Workers.copyDirWorker
 import io.github.octest.udtultra.logic.Workers.copyFileWorker
@@ -269,23 +271,35 @@ fun FileBrowserUI(
             ModalDrawerSheet(
                 modifier = Modifier.width(240.dp)
             ) {
+                Row {
+                    Text("UDTServiceDaemon")
+                    Switch(checked = Daemon.daemonSwitch.value, onCheckedChange = {
+                        Daemon.switch(it)
+                    })
+                }
                 // 顶部添加圆角Row布局
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.medium)
+                        .clip(MaterialTheme.shapes.large)
                         .padding(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row {
                         Text(
                             "数据源",
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(8.dp).weight(1f)
                         )
+                        val scope = CoroutineScope(Dispatchers.Main)
+                        IconButton(onClick = {
+                            scope.launch {
+                                drawerState.close()
+                            }
+                        }) {
+                            Icon(TablerIcons.X, contentDescription = null)
+                        }
                     }
                 }
 
