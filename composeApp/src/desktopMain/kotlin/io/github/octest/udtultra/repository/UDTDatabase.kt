@@ -198,6 +198,27 @@ object UDTDatabase {
             }
     }
 
+    fun deepSeek(
+        entry: DirTreeEntry,
+        path: String,
+        seekFile: (relationPath: String) -> Unit,
+        seekDir: (relationPath: String) -> Unit
+    ) {
+        // 获取当前路径下的文件
+        val files = getFiles(entry, path)
+        for (file in files) {
+            seekFile(file.relationFilePath)
+        }
+
+        // 获取当前路径下的目录并递归遍历
+        val dirs = getDirs(entry, path)
+        for (dir in dirs) {
+            seekDir(dir.relationDirPath)
+            // 递归遍历子目录
+            deepSeek(entry, dir.relationDirPath, seekFile, seekDir)
+        }
+    }
+
     data class FileRecord(
         val entryId: String,
         val relationFilePath: String,

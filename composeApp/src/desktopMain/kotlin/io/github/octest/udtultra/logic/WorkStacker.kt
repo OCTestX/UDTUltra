@@ -8,6 +8,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.octest.udtultra.repository.FileTreeManager
+import io.github.octest.udtultra.repository.UDTDatabase
+import io.klogging.noCoLogger
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
@@ -133,61 +136,117 @@ object WorkStacker {
     }
 }
 
-fun copyFileWorker(
-    from: File,
-    to: File,
-    append: Boolean = false,
-    after: suspend (exception: Throwable?) -> Unit
-): WorkStacker.Worker {
-    return WorkStacker.Worker(
-        workInfo = WorkStacker.WorkInfo(
-            title = "正在复制从${from.absolutePath}到${to.absolutePath}",
-            type = WorkStacker.WorkType.CopyFromSource,
-            progressType = WorkStacker.ProgressType.HasProgress
-        ),
-        work = {
-            try {
-                from.inputStream().use { inputStream ->
-                    to.parentFile.apply {
-                        if (exists().not()) {
-                            mkdirs()
-                        }
-                    }
-                    val totalSize = from.length()
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    var totalRead: Long = 0
-
-                    if (append) {
-                        inputStream.skipNBytes(to.length())
-                        totalRead = to.length()
-                    }
-
-                    setProgress(0f)
-
-                    var lastUpdateBytes = 0L
-                    val updateInterval = totalSize / 100
-
-                    FileOutputStream(to, append).use { outputStream ->
-                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                            outputStream.write(buffer, 0, bytesRead)
-                            totalRead += bytesRead
-
-                            if (totalRead - lastUpdateBytes >= updateInterval) {
-                                val progress = totalRead.toFloat() / totalSize.toFloat()
-                                setProgress(progress)
-                                lastUpdateBytes = totalRead
+object Workers {
+    private val ologger = noCoLogger<Workers>()
+    fun copyFileWorker(
+        from: File,
+        to: File,
+        append: Boolean = false,
+        after: suspend (exception: Throwable?) -> Unit
+    ): WorkStacker.Worker {
+        return WorkStacker.Worker(
+            workInfo = WorkStacker.WorkInfo(
+                title = "正在复制从${from.absolutePath}到${to.absolutePath}",
+                type = WorkStacker.WorkType.CopyFromSource,
+                progressType = WorkStacker.ProgressType.HasProgress
+            ),
+            work = {
+                try {
+                    from.inputStream().use { inputStream ->
+                        to.parentFile.apply {
+                            if (exists().not()) {
+                                mkdirs()
                             }
                         }
-                    }
+                        val totalSize = from.length()
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        var totalRead: Long = 0
 
-                    setProgress(1f)
+                        if (append) {
+                            inputStream.skipNBytes(to.length())
+                            totalRead = to.length()
+                        }
+
+                        setProgress(0f)
+                        var lastUpdateBytes = 0L
+                        val updateInterval = totalSize / 100
+                        FileOutputStream(to, append).use { outputStream ->
+                            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                outputStream.write(buffer, 0, bytesRead)
+                                totalRead += bytesRead
+
+                                if (totalRead - lastUpdateBytes >= updateInterval) {
+                                    val progress = totalRead.toFloat() / totalSize.toFloat()
+                                    setProgress(progress)
+                                    lastUpdateBytes = totalRead
+                                }
+                            }
+                        }
+
+                        setProgress(1f)
+                    }
+                    after(null)
+                } catch (e: Throwable) {
+                    after(e)
+                    throwErrorAndCancel(e)
                 }
-                after(null)
-            } catch (e: Throwable) {
-                after(e)
-                throwErrorAndCancel(e)
             }
-        }
-    )
+        )
+    }
+
+    fun copyDirWorker(
+        entry: UDTDatabase.DirTreeEntry,
+        from: UDTDatabase.DirRecord,
+        to: File,
+        append: Boolean = false,
+        after: suspend (exception: Throwable?) -> Unit
+    ): WorkStacker.Worker {
+        return WorkStacker.Worker(
+            workInfo = WorkStacker.WorkInfo(
+                title = "正在复制文件夹从${from.relationDirPath}到${to.absolutePath}",
+                type = WorkStacker.WorkType.CopyFromSource,
+                progressType = WorkStacker.ProgressType.Running
+            ),
+            work = {
+                try {
+                    val fileRelations = mutableListOf<String>()
+                    setTitle("正在复制文件夹从${from.relationDirPath}到${to.absolutePath}(正在统计中)")
+                    ologger.info { "正在复制文件夹从${from.relationDirPath}到${to.absolutePath}(正在统计中)" }
+                    var count = 0
+                    var doneCount = 0
+                    UDTDatabase.deepSeek(entry, from.relationDirPath, seekFile = {
+                        fileRelations.add(it)
+                        count++
+                        setTitle("正在复制文件夹从${from.relationDirPath}到${to.absolutePath}(正在统计中($count): $it)")
+                        ologger.info { "正在复制文件夹从${from.relationDirPath}到${to.absolutePath}(正在统计中($count): $it)" }
+                    }, seekDir = {
+                        setTitle("正在复制文件夹从${from.relationDirPath}到${to.absolutePath}(创建文件夹中: $it)")
+                        ologger.info { "正在复制文件夹从${from.relationDirPath}到${to.absolutePath}(创建文件夹中: $it)" }
+                    })
+                    setProgressType(WorkStacker.ProgressType.HasProgress)
+                    for (fileRelation in fileRelations) {
+                        val source = FileTreeManager.getExitsFile(entry, fileRelation).getOrThrow()
+                        val target = File(to, fileRelation.removePrefix(from.relationDirPath))
+                        WorkStacker.putWork(copyFileWorker(source, target, append = false) {
+                            if (it == null) {
+                                doneCount++
+                                setTitle("正在复制文件夹从${from.relationDirPath}到${to.absolutePath}($target)")
+                                ologger.info { "正在复制文件夹从${from.relationDirPath}到${to.absolutePath}($target)" }
+                                setProgress(doneCount.toFloat() / count)
+                                if (count == doneCount) {
+                                    after(null)
+                                }
+                            } else {
+                                ologger.error(it) { "ERROR-正在复制文件夹从${from.relationDirPath}到${to.absolutePath}($target)" }
+                            }
+                        })
+                    }
+                } catch (e: Throwable) {
+                    after(e)
+                    throwErrorAndCancel(e)
+                }
+            }
+        )
+    }
 }

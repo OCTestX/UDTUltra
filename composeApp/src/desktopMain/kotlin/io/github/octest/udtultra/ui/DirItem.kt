@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
 import compose.icons.tablericons.Folder
+import compose.icons.tablericons.InfoSquare
 import io.github.octest.udtultra.repository.UDTDatabase
 import org.jetbrains.compose.ui.tooling.preview.Preview
 
@@ -19,7 +20,8 @@ import org.jetbrains.compose.ui.tooling.preview.Preview
 fun DirItemUI(
     dir: UDTDatabase.DirRecord,
     modifier: Modifier = Modifier, // 新增modifier参数支持动画
-    click: () -> Unit
+    click: () -> Unit,
+    clickInfo: () -> Unit
 ) {
     Card(
         onClick = click,
@@ -41,8 +43,20 @@ fun DirItemUI(
             Text(
                 dir.dirName,
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 8.dp)
+                modifier = Modifier.padding(start = 8.dp).weight(1f)
             )
+            IconButton(onClick = {
+                clickInfo()
+            }) {
+                Icon(TablerIcons.InfoSquare, contentDescription = null)
+            }
         }
     }
+}
+
+@Preview
+@Composable
+fun FileItemUI(
+) {
+    Text("")
 }

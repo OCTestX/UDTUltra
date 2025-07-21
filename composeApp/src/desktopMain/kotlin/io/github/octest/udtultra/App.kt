@@ -1,7 +1,7 @@
 package io.github.octest.udtultra
 
 import androidx.compose.runtime.Composable
-import io.github.octest.udtultra.ui.MainPage
+import io.github.octest.udtultra.ui.pages.MainPage
 import org.jetbrains.compose.ui.tooling.preview.Preview
 
 @Composable

@@ -1,9 +1,6 @@
-package io.github.octest.udtultra.ui
+package io.github.octest.udtultra.ui.pages
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,7 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -22,14 +18,19 @@ import compose.icons.TablerIcons
 import compose.icons.tablericons.ArrowBack
 import compose.icons.tablericons.Menu2
 import io.github.octest.udtultra.logic.WorkStacker
-import io.github.octest.udtultra.logic.copyFileWorker
+import io.github.octest.udtultra.logic.Workers.copyDirWorker
+import io.github.octest.udtultra.logic.Workers.copyFileWorker
 import io.github.octest.udtultra.repository.FileTreeManager
 import io.github.octest.udtultra.repository.UDTDatabase
-import io.github.octest.udtultra.ui.MainPage.MainPageAction.SwitchPath
+import io.github.octest.udtultra.ui.DirInfoDialog
+import io.github.octest.udtultra.ui.DirItemUI
+import io.github.octest.udtultra.ui.FileInfoDialog
+import io.github.octest.udtultra.ui.FileItemUI
+import io.github.octest.udtultra.ui.animation.DelayShowAnimationFromTopLeft
+import io.github.octest.udtultra.ui.pages.MainPage.MainPageAction.SwitchPath
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.github.octestx.basic.multiplatform.ui.ui.core.AbsUIPage
 import io.klogging.noCoLogger
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import java.io.File
@@ -40,6 +41,7 @@ import java.io.File
  */
 object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageAction>(MainPageModel()) {
     private val ologger = noCoLogger<MainPage>()
+
     @Composable
     override fun UI(state: MainPageState) {
         FileBrowserUI(
@@ -56,13 +58,22 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
                 state.action(MainPageAction.BackDirectory)
             },
             sendFileTo = {
-
+                state.action(MainPageAction.SendFileTo(it))
             },
             sendFileToDesktop = {
                 state.action(MainPageAction.SendFileToDesktop(it))
             },
             deleteAndBanFile = {
-                TODO()
+                state.action(MainPageAction.DeleteAndBanFile(it))
+            },
+            sendDirTo = {
+                state.action(MainPageAction.SendDirTo(it))
+            },
+            sendDirToDesktop = {
+                state.action(MainPageAction.SendDirToDesktop(it))
+            },
+            deleteAndBanDir = {
+                state.action(MainPageAction.DeleteAndBanDir(it))
             }
         )
     }
@@ -132,10 +143,12 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
                         t1.removeSuffix(File.separator)
                     } else t1
                 }
+
                 is MainPageAction.IntoDirectory -> {
                     // 进入子目录：拼接新路径
                     actionExecute(params, SwitchPath(currentPath + File.separator + action.dirName))
                 }
+
                 is MainPageAction.BackDirectory -> {
                     // 返回上一级目录：移除当前路径最后一段
                     actionExecute(
@@ -165,6 +178,23 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
                         }
                     }
                 }
+
+                is MainPageAction.SendDirTo -> TODO()
+                is MainPageAction.SendDirToDesktop -> {
+                    val entry = currentEntry
+                    if (entry != null) {
+                        val target = File("/home/octest/Desktop/TEST1", action.dir.dirName)
+                        if (target.exists()) {
+                            target.delete()
+                        }
+                        action.dir.relationDirPath
+                        WorkStacker.putWork(copyDirWorker(entry, action.dir, target) {
+                            ologger.info { "文件夹复制完成" }
+                        })
+                    }
+                }
+
+                is MainPageAction.DeleteAndBanDir -> TODO()
             }
         }
     }
@@ -180,6 +210,9 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
         data class SendFileTo(val file: UDTDatabase.FileRecord) : MainPageAction()
         data class SendFileToDesktop(val file: UDTDatabase.FileRecord) : MainPageAction()
         data class DeleteAndBanFile(val file: UDTDatabase.FileRecord) : MainPageAction()
+        data class SendDirTo(val dir: UDTDatabase.DirRecord) : MainPageAction()
+        data class SendDirToDesktop(val dir: UDTDatabase.DirRecord) : MainPageAction()
+        data class DeleteAndBanDir(val dir: UDTDatabase.DirRecord) : MainPageAction()
     }
 }
 
@@ -208,11 +241,15 @@ fun FileBrowserUI(
     backDirectory: () -> Unit,
     sendFileTo: (UDTDatabase.FileRecord) -> Unit,
     sendFileToDesktop: (UDTDatabase.FileRecord) -> Unit,
-    deleteAndBanFile: (UDTDatabase.FileRecord) -> Unit
+    deleteAndBanFile: (UDTDatabase.FileRecord) -> Unit,
+    sendDirTo: (UDTDatabase.DirRecord) -> Unit,
+    sendDirToDesktop: (UDTDatabase.DirRecord) -> Unit,
+    deleteAndBanDir: (UDTDatabase.DirRecord) -> Unit
 ) {
     // 添加文件详情弹窗状态
     var selectedFile by remember { mutableStateOf<UDTDatabase.FileRecord?>(null) }
-    val showFileDetail = selectedFile != null
+    var selectedDir by remember { mutableStateOf<UDTDatabase.DirRecord?>(null) }
+    selectedFile != null || selectedDir != null
 
     // 添加控制侧滑栏的状态
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -288,12 +325,20 @@ fun FileBrowserUI(
     ) {
         selectedFile?.let {
             FileInfoDialog(
-                showFileDetail,
                 it,
                 cleanSelectedFile = { selectedFile = null },
                 sendFileTo = sendFileTo,
                 sendFileToDesktop = sendFileToDesktop,
                 deleteAndBanFile = deleteAndBanFile
+            )
+        }
+        selectedDir?.let {
+            DirInfoDialog(
+                it,
+                cleanSelectedDir = { selectedDir = null },
+                sendDirTo = sendDirTo,
+                sendDirToDesktop = sendDirToDesktop,
+                deleteAndBanDir = deleteAndBanDir
             )
         }
 
@@ -372,7 +417,10 @@ fun FileBrowserUI(
                                 DelayShowAnimationFromTopLeft(modifier = Modifier.animateItem()) {
                                     DirItemUI(
                                         dir = dir,
-                                        click = { intoDirectory(dir.dirName) }
+                                        click = { intoDirectory(dir.dirName) },
+                                        clickInfo = {
+                                            selectedDir = dir
+                                        }
                                     )
                                 }
                             }
@@ -386,121 +434,5 @@ fun FileBrowserUI(
                 WorkStacker.WorkerMiniComponent()
             }
         }
-    }
-}
-
-@Composable
-fun DelayShowAnimationFromTopLeft(
-    delay: Long = 10,
-    animationTime: Int = 500,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    // 透明度动画
-    val alpha = remember { Animatable(0.1f) }
-    // 位移动画（左上角外偏移）
-    val offset = remember { Animatable(-50f) }
-
-    LaunchedEffect(Unit) {
-        delay(delay)
-        // 同时启动透明度与位移动画
-        launch {
-            alpha.animateTo(
-                targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessLow
-                )
-            )
-        }
-        launch {
-            offset.animateTo(
-                targetValue = 0f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessLow
-                )
-            )
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .alpha(alpha.value)
-            .offset(x = offset.value.dp, y = offset.value.dp)
-    ) {
-        content()
-    }
-}
-
-@Composable
-private fun FileInfoDialog(
-    showFileDetail: Boolean,
-    selectedFile: UDTDatabase.FileRecord,
-    cleanSelectedFile: () -> Unit,
-    sendFileTo: (UDTDatabase.FileRecord) -> Unit,
-    sendFileToDesktop: (UDTDatabase.FileRecord) -> Unit,
-    deleteAndBanFile: (UDTDatabase.FileRecord) -> Unit
-) {
-    // 添加文件详情弹窗
-    if (showFileDetail) {
-        AlertDialog(
-            onDismissRequest = { cleanSelectedFile() },
-            title = { Text("文件详情") },
-            text = {
-                Column {
-                    Text("文件名: ${selectedFile.fileName}", style = MaterialTheme.typography.bodyLarge)
-                    Spacer(Modifier.height(8.dp))
-                    Text("大小: ${storage(selectedFile.size)}", style = MaterialTheme.typography.bodyMedium)
-                    Text("路径: ${selectedFile.relationFilePath}", style = MaterialTheme.typography.bodyMedium)
-                }
-            },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = {
-                            // 导出文件逻辑
-                            sendFileTo(selectedFile)
-                            cleanSelectedFile()
-                        },
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text("导出")
-                    }
-                    Button(
-                        onClick = {
-                            // 发送到桌面逻辑
-                            sendFileToDesktop(selectedFile)
-                            cleanSelectedFile()
-                        },
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text("发送到桌面")
-                    }
-                    var lastClickTime by remember(selectedFile) { mutableStateOf(0L) }
-                    Button(
-                        onClick = {
-                            val currentTime = System.currentTimeMillis()
-                            if (currentTime - lastClickTime < 300) { // 双击检测
-                                // 删除文件记录
-                                deleteAndBanFile(selectedFile)
-                                // 关闭对话框
-                                cleanSelectedFile()
-                                lastClickTime = 0
-                            } else {
-                                // 记录单击时间
-                                lastClickTime = currentTime
-                            }
-                        },
-                        modifier = Modifier.padding(end = 8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                    ) {
-                        Text("删除并排除(双击)", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-        )
     }
 }
