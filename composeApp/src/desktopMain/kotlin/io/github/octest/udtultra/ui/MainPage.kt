@@ -22,6 +22,7 @@ import compose.icons.TablerIcons
 import compose.icons.tablericons.ArrowBack
 import compose.icons.tablericons.Menu2
 import io.github.octest.udtultra.logic.WorkStacker
+import io.github.octest.udtultra.logic.copyFileWorker
 import io.github.octest.udtultra.repository.FileTreeManager
 import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octest.udtultra.ui.MainPage.MainPageAction.SwitchPath
@@ -153,17 +154,10 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
                             target.delete()
                         }
                         val source = FileTreeManager.getExitsFile(entry, action.file.relationFilePath)
-                        source.onSuccess {
-                            WorkStacker.putWork("正在复制从${it.absolutePath}到${target.absolutePath}") {
-                                try {
-                                    it.copyTo(target)
-//                                toast.applyShow(ToastModel("复制完成",  type = ToastModel.Type.Info))
-                                    ologger.info { "复制完成" }
-                                } catch (e: Exception) {
-//                                toast.applyShow(ToastModel("复制过程中失败失败: ${e.message}",  type = ToastModel.Type.Error))
-                                    ologger.error(e) { "复制过程中失败失败: ${e.message}" }
-                                }
-                            }
+                        source.onSuccess { source ->
+                            WorkStacker.putWork(copyFileWorker(source, target, append = true) {
+                                ologger.info { "复制完成" }
+                            })
                         }
                         source.onFailure {
 //                            toast.applyShow(ToastModel("复制失败",  type = ToastModel.Type.Error))
@@ -292,73 +286,14 @@ fun FileBrowserUI(
             }
         }
     ) {
-        // 添加文件详情弹窗
-        if (showFileDetail) {
-            AlertDialog(
-                onDismissRequest = { selectedFile = null },
-                title = { Text("文件详情") },
-                text = {
-                    selectedFile?.let { file ->
-                        Column {
-                            Text("文件名: ${file.fileName}", style = MaterialTheme.typography.bodyLarge)
-                            Spacer(Modifier.height(8.dp))
-                            Text("大小: ${storage(file.size)}", style = MaterialTheme.typography.bodyMedium)
-                            Text("路径: ${file.relationFilePath}", style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                },
-                confirmButton = {
-                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                        Button(
-                            onClick = {
-                                // 导出文件逻辑
-                                selectedFile?.let {
-                                    sendFileTo(it)
-                                }
-                                selectedFile = null
-                            },
-                            modifier = Modifier.padding(end = 8.dp)
-                        ) {
-                            Text("导出")
-                        }
-                        Button(
-                            onClick = {
-                                // 发送到桌面逻辑
-                                selectedFile?.let {
-                                    sendFileToDesktop(it)
-                                }
-                                selectedFile = null
-                            },
-                            modifier = Modifier.padding(end = 8.dp)
-                        ) {
-                            Text("发送到桌面")
-                        }
-                        var lastClickTime by remember(selectedFile) { mutableStateOf(0L) }
-                        Button(
-                            onClick = {
-                                val currentTime = System.currentTimeMillis()
-                                if (currentTime - lastClickTime < 300) { // 双击检测
-                                    selectedFile?.let { file ->
-                                        // 删除文件记录
-                                        deleteAndBanFile(file)
-                                        // 关闭对话框
-                                        selectedFile = null
-                                    }
-                                    lastClickTime = 0
-                                } else {
-                                    // 记录单击时间
-                                    lastClickTime = currentTime
-                                }
-                            },
-                            modifier = Modifier.padding(end = 8.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.onErrorContainer,
-                            )
-                        ) {
-                            Text("删除并排除(双击)", color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
+        selectedFile?.let {
+            FileInfoDialog(
+                showFileDetail,
+                it,
+                cleanSelectedFile = { selectedFile = null },
+                sendFileTo = sendFileTo,
+                sendFileToDesktop = sendFileToDesktop,
+                deleteAndBanFile = deleteAndBanFile
             )
         }
 
@@ -448,6 +383,7 @@ fun FileBrowserUI(
                         )
                     }
                 }
+                WorkStacker.WorkerMiniComponent()
             }
         }
     }
@@ -494,5 +430,77 @@ fun DelayShowAnimationFromTopLeft(
             .offset(x = offset.value.dp, y = offset.value.dp)
     ) {
         content()
+    }
+}
+
+@Composable
+private fun FileInfoDialog(
+    showFileDetail: Boolean,
+    selectedFile: UDTDatabase.FileRecord,
+    cleanSelectedFile: () -> Unit,
+    sendFileTo: (UDTDatabase.FileRecord) -> Unit,
+    sendFileToDesktop: (UDTDatabase.FileRecord) -> Unit,
+    deleteAndBanFile: (UDTDatabase.FileRecord) -> Unit
+) {
+    // 添加文件详情弹窗
+    if (showFileDetail) {
+        AlertDialog(
+            onDismissRequest = { cleanSelectedFile() },
+            title = { Text("文件详情") },
+            text = {
+                Column {
+                    Text("文件名: ${selectedFile.fileName}", style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.height(8.dp))
+                    Text("大小: ${storage(selectedFile.size)}", style = MaterialTheme.typography.bodyMedium)
+                    Text("路径: ${selectedFile.relationFilePath}", style = MaterialTheme.typography.bodyMedium)
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = {
+                            // 导出文件逻辑
+                            sendFileTo(selectedFile)
+                            cleanSelectedFile()
+                        },
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text("导出")
+                    }
+                    Button(
+                        onClick = {
+                            // 发送到桌面逻辑
+                            sendFileToDesktop(selectedFile)
+                            cleanSelectedFile()
+                        },
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text("发送到桌面")
+                    }
+                    var lastClickTime by remember(selectedFile) { mutableStateOf(0L) }
+                    Button(
+                        onClick = {
+                            val currentTime = System.currentTimeMillis()
+                            if (currentTime - lastClickTime < 300) { // 双击检测
+                                // 删除文件记录
+                                deleteAndBanFile(selectedFile)
+                                // 关闭对话框
+                                cleanSelectedFile()
+                                lastClickTime = 0
+                            } else {
+                                // 记录单击时间
+                                lastClickTime = currentTime
+                            }
+                        },
+                        modifier = Modifier.padding(end = 8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    ) {
+                        Text("删除并排除(双击)", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        )
     }
 }
