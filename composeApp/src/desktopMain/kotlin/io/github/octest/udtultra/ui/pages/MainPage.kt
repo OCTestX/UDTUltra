@@ -16,26 +16,30 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
 import compose.icons.tablericons.ArrowBack
+import compose.icons.tablericons.Loader
 import compose.icons.tablericons.Menu2
 import compose.icons.tablericons.X
-import io.github.octest.udtultra.logic.Daemon
 import io.github.octest.udtultra.logic.WorkStacker
 import io.github.octest.udtultra.logic.Workers.copyDirWorker
 import io.github.octest.udtultra.logic.Workers.copyFileWorker
 import io.github.octest.udtultra.repository.FileTreeManager
+import io.github.octest.udtultra.repository.SettingRepository
 import io.github.octest.udtultra.repository.UDTDatabase
+import io.github.octest.udtultra.repository.database.DirRecord
+import io.github.octest.udtultra.repository.database.DirTreeEntry
+import io.github.octest.udtultra.repository.database.FileRecord
 import io.github.octest.udtultra.ui.DirInfoDialog
 import io.github.octest.udtultra.ui.DirItemUI
 import io.github.octest.udtultra.ui.FileInfoDialog
 import io.github.octest.udtultra.ui.FileItemUI
 import io.github.octest.udtultra.ui.animation.DelayShowAnimationFromTopLeft
 import io.github.octest.udtultra.ui.pages.MainPage.MainPageAction.SwitchPath
+import io.github.octestx.basic.multiplatform.common.utils.gb
+import io.github.octestx.basic.multiplatform.common.utils.kb
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.github.octestx.basic.multiplatform.ui.ui.core.AbsUIPage
 import io.klogging.noCoLogger
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import java.io.File
 
@@ -55,6 +59,12 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
             state.currentFiles,
             state.currentDirs,
             canBack = state.canBack,
+            reload = {
+                state.action(MainPageAction.ReloadData)
+            },
+            selectedEntry = {
+                state.action(MainPageAction.SelectedEntry(it))
+            },
             intoDirectory = {
                 state.action(MainPageAction.IntoDirectory(it))
             },
@@ -92,21 +102,22 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
      * @param action 事件回调
      */
     data class MainPageState(
-        val entrys: List<UDTDatabase.DirTreeEntry>,
-        val currentEntry: UDTDatabase.DirTreeEntry?,
+        val entrys: List<DirTreeEntry>,
+        val currentEntry: DirTreeEntry?,
         val currentPath: String,
-        val currentFiles: List<UDTDatabase.FileRecord>,
-        val currentDirs: List<UDTDatabase.DirRecord>,
+        val currentFiles: List<FileRecord>,
+        val currentDirs: List<DirRecord>,
         val canBack: Boolean,
         val action: (MainPageAction) -> Unit,
     ) : AbsUIState<MainPageAction>()
 
     class MainPageModel() : AbsUIModel<Unit, MainPageState, MainPageAction>() {
-        private val entrys = UDTDatabase.getEntrys()
-        private var currentEntry: UDTDatabase.DirTreeEntry? by mutableStateOf(entrys.firstOrNull())
+        private var reloadNotify by mutableIntStateOf(0)
+        private val entrys = mutableStateListOf<DirTreeEntry>()
+        private var currentEntry: DirTreeEntry? by mutableStateOf(entrys.firstOrNull())
         private var currentPath: String by mutableStateOf("")
-        private val currentFiles = mutableStateListOf<UDTDatabase.FileRecord>()
-        private val currentDirs = mutableStateListOf<UDTDatabase.DirRecord>()
+        private val currentFiles = mutableStateListOf<FileRecord>()
+        private val currentDirs = mutableStateListOf<DirRecord>()
 
         /**
          * 创建页面状态
@@ -114,9 +125,15 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
          */
         @Composable
         override fun CreateState(params: Unit): MainPageState {
-            LaunchedEffect(currentEntry, currentPath) {
-                ologger.debug { "ReloadData: $currentPath" }
+            LaunchedEffect(currentEntry, currentPath, reloadNotify) {
+                entrys.clear()
+                entrys.addAll(UDTDatabase.getEntrys())
                 val entry = currentEntry
+                if ((entry?.id in entrys.map { it.id }).not()) {
+                    currentEntry = if (entrys.isEmpty()) null
+                    else entrys.first()
+                }
+                ologger.info { "ReloadData: $currentPath" }
                 if (entry != null) {
                     currentFiles.clear()
                     currentDirs.clear()
@@ -139,6 +156,9 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
          */
         override fun actionExecute(params: Unit, action: MainPageAction) {
             when (action) {
+                MainPageAction.ReloadData -> {
+                    reloadNotify++
+                }
                 is SwitchPath -> {
                     // 处理路径切换，标准化路径格式
                     val t1 = if (action.path.startsWith(File.separator))
@@ -160,7 +180,11 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
                         SwitchPath(currentPath.removeSuffix(currentPath.split(File.separator).last()))
                     )
                 }
-
+                is MainPageAction.SelectedEntry -> {
+                    // 选择根目录：切换当前目录
+                    currentEntry = action.entry
+                    currentPath = ""
+                }
                 is MainPageAction.DeleteAndBanFile -> TODO()
                 is MainPageAction.SendFileTo -> TODO()
                 is MainPageAction.SendFileToDesktop -> {
@@ -213,15 +237,17 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
      * 包含路径切换、进入目录、返回目录等操作
      */
     sealed class MainPageAction : AbsUIAction() {
+        data object ReloadData : MainPageAction()
         data class SwitchPath(val path: String) : MainPageAction()
         data class IntoDirectory(val dirName: String) : MainPageAction()
         data object BackDirectory : MainPageAction()
-        data class SendFileTo(val file: UDTDatabase.FileRecord) : MainPageAction()
-        data class SendFileToDesktop(val file: UDTDatabase.FileRecord) : MainPageAction()
-        data class DeleteAndBanFile(val file: UDTDatabase.FileRecord) : MainPageAction()
-        data class SendDirTo(val dir: UDTDatabase.DirRecord) : MainPageAction()
-        data class SendDirToDesktop(val dir: UDTDatabase.DirRecord) : MainPageAction()
-        data class DeleteAndBanDir(val dir: UDTDatabase.DirRecord) : MainPageAction()
+        data class SelectedEntry(val entry: DirTreeEntry) : MainPageAction()
+        data class SendFileTo(val file: FileRecord) : MainPageAction()
+        data class SendFileToDesktop(val file: FileRecord) : MainPageAction()
+        data class DeleteAndBanFile(val file: FileRecord) : MainPageAction()
+        data class SendDirTo(val dir: DirRecord) : MainPageAction()
+        data class SendDirToDesktop(val dir: DirRecord) : MainPageAction()
+        data class DeleteAndBanDir(val dir: DirRecord) : MainPageAction()
     }
 }
 
@@ -240,24 +266,26 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
 @Preview
 @Composable
 fun FileBrowserUI(
-    entrys: List<UDTDatabase.DirTreeEntry>,
-    currentEntry: UDTDatabase.DirTreeEntry?,
+    entrys: List<DirTreeEntry>,
+    currentEntry: DirTreeEntry?,
     currentPath: String,
-    currentFiles: List<UDTDatabase.FileRecord>,
-    currentDirs: List<UDTDatabase.DirRecord>,
+    currentFiles: List<FileRecord>,
+    currentDirs: List<DirRecord>,
     canBack: Boolean,
+    reload: () -> Unit,
+    selectedEntry: (DirTreeEntry) -> Unit,
     intoDirectory: (String) -> Unit,
     backDirectory: () -> Unit,
-    sendFileTo: (UDTDatabase.FileRecord) -> Unit,
-    sendFileToDesktop: (UDTDatabase.FileRecord) -> Unit,
-    deleteAndBanFile: (UDTDatabase.FileRecord) -> Unit,
-    sendDirTo: (UDTDatabase.DirRecord) -> Unit,
-    sendDirToDesktop: (UDTDatabase.DirRecord) -> Unit,
-    deleteAndBanDir: (UDTDatabase.DirRecord) -> Unit
+    sendFileTo: (FileRecord) -> Unit,
+    sendFileToDesktop: (FileRecord) -> Unit,
+    deleteAndBanFile: (FileRecord) -> Unit,
+    sendDirTo: (DirRecord) -> Unit,
+    sendDirToDesktop: (DirRecord) -> Unit,
+    deleteAndBanDir: (DirRecord) -> Unit
 ) {
     // 添加文件详情弹窗状态
-    var selectedFile by remember { mutableStateOf<UDTDatabase.FileRecord?>(null) }
-    var selectedDir by remember { mutableStateOf<UDTDatabase.DirRecord?>(null) }
+    var selectedFile by remember { mutableStateOf<FileRecord?>(null) }
+    var selectedDir by remember { mutableStateOf<DirRecord?>(null) }
     selectedFile != null || selectedDir != null
 
     // 添加控制侧滑栏的状态
@@ -271,12 +299,14 @@ fun FileBrowserUI(
             ModalDrawerSheet(
                 modifier = Modifier.width(240.dp)
             ) {
-                Row {
-                    Text("UDTServiceDaemon")
-                    Switch(checked = Daemon.daemonSwitch.value, onCheckedChange = {
-                        Daemon.switch(it)
+                Row(Modifier.padding(6.dp)) {
+                    Text("UDTServiceDaemon", modifier = Modifier.align(Alignment.CenterVertically))
+                    Spacer(Modifier.width(12.dp))
+                    Switch(checked = SettingRepository.daemonSwitch.value, onCheckedChange = {
+                        SettingRepository.switchDaemonStatus(it)
                     })
                 }
+                SpeedSlider()
                 // 顶部添加圆角Row布局
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
@@ -292,7 +322,7 @@ fun FileBrowserUI(
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.padding(8.dp).weight(1f)
                         )
-                        val scope = CoroutineScope(Dispatchers.Main)
+                        val scope = rememberCoroutineScope() + CoroutineName("FileBrowserUIScope")
                         IconButton(onClick = {
                             scope.launch {
                                 drawerState.close()
@@ -314,7 +344,7 @@ fun FileBrowserUI(
                             val isSelected = currentEntry?.id == entry.id
                             Card(
                                 onClick = {
-                                    // 点击根目录时的处理逻辑
+                                    selectedEntry(entry)
                                 },
                                 Modifier.padding(4.dp),
                                 colors = CardDefaults.cardColors(
@@ -385,10 +415,16 @@ fun FileBrowserUI(
                         }
                     },
                     actions = {
-                        // 保留返回按钮
-                        AnimatedVisibility(canBack) {
-                            IconButton(onClick = backDirectory) {
-                                Icon(TablerIcons.ArrowBack, contentDescription = "返回上一级")
+                        Row {
+                            AnimatedVisibility(canBack) {
+                                IconButton(onClick = backDirectory) {
+                                    Icon(TablerIcons.ArrowBack, contentDescription = "返回上一级")
+                                }
+                            }
+                            IconButton(onClick = {
+                                reload()
+                            }) {
+                                Icon(TablerIcons.Loader, contentDescription = "Reload")
                             }
                         }
                     }
@@ -455,5 +491,39 @@ fun FileBrowserUI(
                 WorkStacker.WorkerMiniComponent()
             }
         }
+    }
+}
+
+// 替换原有Row组件
+@Composable
+fun SpeedSlider() {
+    val ioscope = remember { CoroutineScope(Dispatchers.IO) }
+
+    Column(
+        Modifier
+            .padding(6.dp)
+            .fillMaxWidth()
+    ) {
+        Text(
+            "复制速度: ${storage(SettingRepository.copySpeed.value)}",
+        )
+        Spacer(Modifier.width(6.dp))
+
+        Slider(
+            value = (SettingRepository.copySpeed.value).toFloat(),
+            onValueChange = { newValue ->
+                val speedInMB = newValue.toLong()
+                // 启动协程更新速度
+                ioscope.launch {
+                    SettingRepository.changeCopySpeed(speedInMB)
+                }
+            },
+            valueRange = 512.kb.toFloat()..5.gb.toFloat(),
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primaryContainer
+            ),
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
     }
 }

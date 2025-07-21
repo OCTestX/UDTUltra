@@ -8,14 +8,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
 import compose.icons.tablericons.File
-import io.github.octest.udtultra.repository.UDTDatabase
+import io.github.octest.udtultra.repository.database.FileRecord
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import org.jetbrains.compose.ui.tooling.preview.Preview
 
 @Preview
 @Composable
 fun FileItemUI(
-    file: UDTDatabase.FileRecord,
+    file: FileRecord,
     modifier: Modifier = Modifier,
     click: () -> Unit
 ) {

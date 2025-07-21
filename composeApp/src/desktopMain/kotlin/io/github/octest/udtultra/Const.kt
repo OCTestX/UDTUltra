@@ -1,20 +1,18 @@
 package io.github.octest.udtultra
 
-import io.github.octestx.basic.multiplatform.common.utils.mb
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 
-object Config {
-    val copySpeed = 5.mb
-    val appDir = "/home/octest/Desktop/UDTUltra"
+object Const {
+    const val appDir = "/home/octest/Desktop/UDTUltra"
     // 经过多少次可以尝试休息
-    val randomSleepCount = 100
+    const val randomSleepCount = 100
     // 次数的摆动数值
-    val shake = 12
+    const val shake = 12
     // 休息成功的概率
-    val sleepFactor = 0.99
+    const val sleepFactor = 0.99
     // 休息时间
-    val sleep = 100L
+    const val sleep = 100L
 
 
 

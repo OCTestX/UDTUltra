@@ -5,15 +5,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.github.octest.udtultra.repository.UDTDatabase
+import io.github.octest.udtultra.repository.database.DirRecord
 
 @Composable
 fun DirInfoDialog(
-    selectedDir: UDTDatabase.DirRecord,
+    selectedDir: DirRecord,
     cleanSelectedDir: () -> Unit,
-    sendDirTo: (UDTDatabase.DirRecord) -> Unit,
-    sendDirToDesktop: (UDTDatabase.DirRecord) -> Unit,
-    deleteAndBanDir: (UDTDatabase.DirRecord) -> Unit
+    sendDirTo: (DirRecord) -> Unit,
+    sendDirToDesktop: (DirRecord) -> Unit,
+    deleteAndBanDir: (DirRecord) -> Unit
 ) {
     // 添加文件详情弹窗
     AlertDialog(

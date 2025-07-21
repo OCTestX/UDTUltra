@@ -12,13 +12,13 @@ import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
 import compose.icons.tablericons.Folder
 import compose.icons.tablericons.InfoSquare
-import io.github.octest.udtultra.repository.UDTDatabase
+import io.github.octest.udtultra.repository.database.DirRecord
 import org.jetbrains.compose.ui.tooling.preview.Preview
 
 @Preview
 @Composable
 fun DirItemUI(
-    dir: UDTDatabase.DirRecord,
+    dir: DirRecord,
     modifier: Modifier = Modifier, // 新增modifier参数支持动画
     click: () -> Unit,
     clickInfo: () -> Unit

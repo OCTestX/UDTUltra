@@ -1,26 +1,28 @@
 package io.github.octest.udtultra.repository
 
-import io.github.octest.udtultra.Config
+import io.github.octest.udtultra.Const
+import io.github.octest.udtultra.logic.WorkStacker
 import io.github.octest.udtultra.repository.FileTreeManager.getFilePathHex16
 import io.github.octest.udtultra.repository.FileTreeManager.getRelationPath
+import io.github.octest.udtultra.repository.database.*
+import io.github.octest.udtultra.utils.SpeedMonitoringOutputStream
+import io.github.octest.udtultra.utils.StringMerger
 import io.github.octest.udtultra.utils.createTableIfNotExists
+import io.github.octest.udtultra.utils.transferToWithProgress
 import io.github.octestx.basic.multiplatform.common.utils.RateLimitInputStream
+import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.klogging.noCoLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.ktorm.database.Database
 import org.ktorm.dsl.*
-import org.ktorm.schema.Table
-import org.ktorm.schema.int
-import org.ktorm.schema.long
-import org.ktorm.schema.varchar
 import java.io.File
 import java.io.FileOutputStream
 
 object UDTDatabase {
     private val ologger = noCoLogger<UDTDatabase>()
-    val DBFile = File(Config.appDir, "db.db")
+    val DBFile = File(Const.appDir, "db.db")
     private val ktormDatabase: Database by lazy {
         Database.connect(
             url = "jdbc:sqlite:${DBFile.absolutePath}",
@@ -61,14 +63,7 @@ object UDTDatabase {
         suspend fun seekFile(file: File)
     }
 
-    fun writeFile(entry: DirTreeEntry, file: File) {
-        ktormDatabase.update(Files) {
-            set(it.status, 1)
-            where {
-                it.filePath.eq(getRelationPath(entry.target, file))
-            }
-        }
-        ologger.info { "SavingFile: $file" }
+    suspend fun registerFile(entry: DirTreeEntry, file: File) {
         ktormDatabase.insert(Files) {
             set(it.entryId, entry.id)
             set(it.filePath, getRelationPath(entry.target, file))
@@ -79,20 +74,78 @@ object UDTDatabase {
             set(it.modifierDate, file.lastModified())
             set(it.status, 0) // status 设置为 0
         }
-        val targetFile = FileTreeManager.linkFile(entry, getFilePathHex16(entry.target, file))
-        RateLimitInputStream(file.inputStream().apply { skipNBytes(targetFile.length()) }, Config.copySpeed).use { inputStream ->
-            FileOutputStream(targetFile, true).use { outputStream ->
-                inputStream.transferTo(outputStream)
-            }
-        }
-        ologger.info { "SaveFileDone: $file" }
-        ktormDatabase.update(Files) {
-            set(it.status, 2)
-            where {
-                it.filePath.eq(getRelationPath(entry.target, file))
-            }
-        }
     }
+
+    suspend fun writeFile(entry: DirTreeEntry, file: File) {
+        WorkStacker.putWork(
+            WorkStacker.Worker(
+                WorkStacker.WorkInfo(
+                    title = "正在提取U盘文件: $file",
+                    type = WorkStacker.WorkType.CopyFromSource,
+                    progressType = WorkStacker.ProgressType.HasProgress
+                ),
+                work = {
+                    try {
+                        ktormDatabase.update(Files) {
+                            set(it.status, 1)
+                            where {
+                                (it.entryId eq entry.id) and (it.filePath.eq(getRelationPath(entry.target, file)))
+                            }
+                        }
+                        ologger.info { "SavingFile: $file" }
+                        val totalSize = file.length()
+                        val targetFile = FileTreeManager.linkFile(entry, getFilePathHex16(entry.target, file))
+                        targetFile.createNewFile()
+                        var bytesTransferred = targetFile.length() // 初始已传输字节数（断点续传）
+
+                        RateLimitInputStream(file.inputStream().apply {
+                            skipNBytes(bytesTransferred) // 跳过已存在的字节
+                        }, SettingRepository.copySpeed.value).use { inputStream ->
+                            val stringMerger = StringMerger { map ->
+                                setMessage(
+                                    "${map["speed"] ?: ""}   ${map["progressInfo"] ?: ""}"
+                                )
+                            }
+                            SpeedMonitoringOutputStream(FileOutputStream(targetFile, true), callback = { speed ->
+                                stringMerger.applyString("speed", "${storage(speed)}/s")
+                            }).use { outputStream ->
+                                inputStream.buffered().use { bufferedInput ->
+                                    bufferedInput.transferToWithProgress(outputStream) { currentStepRead ->
+                                        bytesTransferred += currentStepRead
+                                        val progress = bytesTransferred.toFloat() / totalSize
+                                        setProgress(progress) // 调用进度回调
+                                        stringMerger.applyString(
+                                            "progressInfo",
+                                            "${storage(bytesTransferred)}/${storage(totalSize)}"
+                                        )
+                                        ologger.debug { "正在提取U盘文件: $file [Total: $totalSize, Transferred: $bytesTransferred]" }
+                                    }
+                                }
+                            }
+                        }
+
+                        ologger.info { "SaveFileDone: $file" }
+                        ktormDatabase.update(Files) {
+                            set(it.status, 2)
+                            where {
+                                (it.entryId eq entry.id) and (it.filePath.eq(getRelationPath(entry.target, file)))
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        ktormDatabase.update(Files) {
+                            set(it.status, 3)
+                            where {
+                                it.filePath.eq(getRelationPath(entry.target, file))
+                            }
+                        }
+                        ologger.error(e) { "复制出错，可能u盘被移除" }
+                        throwErrorAndCancel(e)
+                    }
+                }
+            )
+        ).join()
+    }
+
 
     fun writeDirInfo(entry: DirTreeEntry, dir: File) {
         ktormDatabase.insert(Dirs) {
@@ -107,43 +160,6 @@ object UDTDatabase {
             set(it.modifierDate, dir.lastModified())
         }
     }
-
-    class EntryWorkerImpl(
-        private val entry: DirTreeEntry
-    ) : EntryWorker {
-        override suspend fun seekFile(file: File) {
-            if (file.isFile) {
-                val recordStatus = ktormDatabase
-                    .from(Files)
-                    .select()
-                    .where { Files.filePath eq (getRelationPath(entry.target, file)) }
-                    .map {
-                        it[Files.status]
-                    }.firstOrNull()
-                // 检查文件状态是否有效
-                if (recordStatus == null || recordStatus != 2) {
-                    writeFile(entry, file) // 状态3表示异常，也需要重新写入
-                } else {
-                    println("SKIPFile: $file")
-                }
-            } else if (file.isDirectory) {
-                val record = ktormDatabase
-                    .from(Dirs)
-                    .select()
-                    .where { Dirs.dirPath eq (getRelationPath(entry.target, file)) }
-                    .map {
-                        it[Dirs.dirPath]
-                    }.firstOrNull()
-
-                if (record == null) {
-                    writeDirInfo(entry, file)
-                } else {
-                    println("SKIPDir: $file")
-                }
-            }
-        }
-    }
-
     fun getEntrys(): List<DirTreeEntry> {
         return ktormDatabase
             .from(Entrys)
@@ -156,6 +172,8 @@ object UDTDatabase {
                     totalSpace = it[Entrys.totalSpace] ?: 0,
                     freeSpace = it[Entrys.freeSpace] ?: 0,
                 )
+            }.apply {
+                ologger.debug { "getEntrys: $this@apply" }
             }
     }
     fun getFiles(entry: DirTreeEntry, path: String = ""): List<FileRecord> {
@@ -219,67 +237,52 @@ object UDTDatabase {
         }
     }
 
-    data class FileRecord(
-        val entryId: String,
-        val relationFilePath: String,
-        val fileName: String,
-        val parentDir: String?,
-        val size: Long,
-        val createDate: Long,
-        val modifierDate: Long,
-        val status: Int,
-    )
+    fun DirTreeEntry.exist(): Boolean {
+        return ktormDatabase
+            .from(Entrys)
+            .select()
+            .where { Entrys.id eq this.id }
+            .map { true }
+            .isNotEmpty()
+    }
 
-    data class DirRecord(
-        val entryId: String,
-        val relationDirPath: String,
-        val dirName: String,
-        val parentDir: String?,
-        val createDate: Long,
-        val modifierDate: Long,
-    )
+    class EntryWorkerImpl(
+        private val entry: DirTreeEntry
+    ) : EntryWorker {
+        override suspend fun seekFile(file: File) {
+            if (file.isFile) {
+                val recordStatus = ktormDatabase
+                    .from(Files)
+                    .select()
+                    .where { Files.filePath eq (getRelationPath(entry.target, file)) }
+                    .map {
+                        it[Files.status]
+                    }.firstOrNull()
+                // 检查文件状态是否有效
+                if (recordStatus == null) {
+                    registerFile(entry, file)
+                }
+                if (recordStatus != 2) {
+                    writeFile(entry, file) // 状态3表示异常，也需要重新写入
+                } else {
+                    ologger.info { "SKIPFile: $file" }
+                }
+            } else if (file.isDirectory) {
+                val record = ktormDatabase
+                    .from(Dirs)
+                    .select()
+                    .where { Dirs.dirPath eq (getRelationPath(entry.target, file)) }
+                    .map {
+                        it[Dirs.dirPath]
+                    }.firstOrNull()
 
-    data class DirTreeEntry(
-        val name: String,
-        val target: File,
-        val id: String,
-        val totalSpace: Long,
-        val freeSpace: Long,
-    ) {
-        fun exist(): Boolean {
-            return ktormDatabase
-                .from(Entrys)
-                .select()
-                .where { Entrys.id eq this.id }
-                .map { true }
-                .isNotEmpty()
+                if (record == null) {
+                    writeDirInfo(entry, file)
+                } else {
+                    ologger.info { "SKIPDir: $file" }
+                }
+            }
         }
     }
 
-    object Entrys : Table<Nothing>("entrys") {
-        val id = varchar("id").primaryKey()
-        val name = varchar("name")
-        val totalSpace = long("totalSpace")
-        val freeSpace = long("freeSpace")
-    }
-
-    object Files : Table<Nothing>("files") {
-        val entryId = varchar("entryId")
-        val filePath = varchar("filePath").primaryKey()
-        val fileName = varchar("fileName")
-        val parentDir = varchar("parentDir")
-        val size = long("size")
-        val createDate = long("createDate")
-        val modifierDate = long("modifierDate")
-        val status = int("status")
-    }
-
-    object Dirs : Table<Nothing>("dirs") {
-        val entryId = varchar("entryId")
-        val dirPath = varchar("dirPath").primaryKey()
-        val fileName = varchar("dirName")
-        val parentDir = varchar("parentDir")
-        val createDate = long("createDate")
-        val modifierDate = long("modifierDate")
-    }
 }

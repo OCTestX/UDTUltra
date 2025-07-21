@@ -2,7 +2,7 @@ package io.github.octest.udtultra
 
 import io.github.octest.udtultra.logic.WorkStacker
 import io.github.octest.udtultra.repository.UDTDatabase
-import io.github.octest.udtultra.repository.UDTDatabase.DirTreeEntry
+import io.github.octest.udtultra.repository.database.DirTreeEntry
 import io.github.octestx.basic.multiplatform.common.utils.gb
 import io.github.octestx.basic.multiplatform.common.utils.mb
 import io.klogging.noCoLogger
@@ -26,11 +26,18 @@ class DirRecorder(
                             WorkStacker.ProgressType.Running
                         )
                     ) {
-                        traverseDirectory(entry.target) {
-                            ologger.info { "Traverse: $it" }
-                            setTitle("U盘复制中: $it")
+                        ologger.info { "UDiskRoot: ${entry.target}" }
+                        try {
+                            traverseDirectory(entry.target) {
+                                ologger.info { "Traverse: $it" }
+                                setTitle("U盘复制中: $it")
+                            }
+                            ologger.info { "DONE!" }
+                        } catch (e: Throwable) {
+                            setTitle("U盘复制失败")
+                            ologger.error(e) { "U盘复制失败" }
+                            throwErrorAndCancel(e)
                         }
-                        println("DONE!")
                     },
                 )
             }
@@ -38,14 +45,21 @@ class DirRecorder(
     }
 
     private suspend fun UDTDatabase.EntryWorker.traverseDirectory(file: File, throughFile: suspend (File) -> Unit) {
+        ologger.debug { "traversingDirectory: $file" }
         if (file.isDirectory) {
             file.listFiles()?.forEach { child ->
 //                println("Traverse: $child")
-                throughFile(child)
-                seekFile(child)
-                Config.seekPoint()
-                if (child.isDirectory) {
-                    traverseDirectory(child, throughFile)
+                ologger.debug { "traversingDirectoryChild: $child" }
+                try {
+                    throughFile(child)
+                    seekFile(child)
+                    Const.seekPoint()
+                    if (child.isDirectory) {
+                        traverseDirectory(child, throughFile)
+                    }
+                } catch (e: Throwable) {
+                    ologger.error(e) { "traverseDirectoryFail: $file" }
+                    throw e
                 }
             }
         }

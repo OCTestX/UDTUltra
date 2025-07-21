@@ -1,12 +1,13 @@
 package io.github.octest.udtultra.repository
 
-import io.github.octest.udtultra.Config
+import io.github.octest.udtultra.Const
+import io.github.octest.udtultra.repository.database.DirTreeEntry
 import java.io.File
 import java.math.BigInteger
 
 object FileTreeManager {
-    val storageDir = File(Config.appDir, "storage")
-    fun linkFile(entry: UDTDatabase.DirTreeEntry, paths: List<String>): File {
+    val storageDir = File(Const.appDir, "storage")
+    fun linkFile(entry: DirTreeEntry, paths: List<String>): File {
         var file = File(storageDir, entry.id)
         for (path in paths) {
             file = File(file, path)
@@ -18,7 +19,7 @@ object FileTreeManager {
         return file
     }
 
-    fun getExitsFile(entry: UDTDatabase.DirTreeEntry, path: String): Result<File> {
+    fun getExitsFile(entry: DirTreeEntry, path: String): Result<File> {
         var file = File(storageDir, entry.id)
         val hexs = getFilePathHex16(path)
         for (hex in hexs) {

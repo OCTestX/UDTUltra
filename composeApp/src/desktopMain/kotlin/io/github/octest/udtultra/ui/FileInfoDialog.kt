@@ -5,16 +5,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.github.octest.udtultra.repository.UDTDatabase
+import io.github.octest.udtultra.repository.database.FileRecord
 import io.github.octestx.basic.multiplatform.common.utils.storage
 
 @Composable
 fun FileInfoDialog(
-    selectedFile: UDTDatabase.FileRecord,
+    selectedFile: FileRecord,
     cleanSelectedFile: () -> Unit,
-    sendFileTo: (UDTDatabase.FileRecord) -> Unit,
-    sendFileToDesktop: (UDTDatabase.FileRecord) -> Unit,
-    deleteAndBanFile: (UDTDatabase.FileRecord) -> Unit
+    sendFileTo: (FileRecord) -> Unit,
+    sendFileToDesktop: (FileRecord) -> Unit,
+    deleteAndBanFile: (FileRecord) -> Unit
 ) {
     // 添加文件详情弹窗
     AlertDialog(

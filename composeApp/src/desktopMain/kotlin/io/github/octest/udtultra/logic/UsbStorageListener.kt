@@ -3,32 +3,137 @@ package io.github.octest.udtultra.logic
 import io.github.octestx.basic.multiplatform.common.utils.OS
 import kotlinx.coroutines.delay
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
+import java.nio.file.StandardWatchEventKinds.ENTRY_CREATE
+import java.nio.file.StandardWatchEventKinds.ENTRY_DELETE
+import java.nio.file.WatchService
 
-suspend fun usbStorageListener(callback: (id: String, root: File) -> Unit) {
-    val detectedDevices = mutableSetOf<String>()
+// 新增：USB事件类型枚举
+enum class UsbEvent {
+    INSERT, REMOVE
+}
 
+suspend fun usbStorageListener(
+    initDriversId: Set<String> = setOf(),
+    callback: (event: UsbEvent, id: String, root: File) -> Unit
+) {
     if (OS.currentOS == OS.OperatingSystem.WIN) {
-        // Windows通过WMI监听USB存储设备插入
-        while (true) {
-            val result = "wmic path Win32_USBHub get DeviceID".executeCommand()
-            val devices = result.lines().filter { it.contains("VID_") || it.contains("PID_") }
+        val detectedDevices = mutableMapOf<String, File>()
 
-            devices.forEach { device ->
-                if (device !in detectedDevices) {
-                    detectedDevices.add(device)
-                    // 获取卷序列号作为root路径
-                    val volume = "wmic volume get DeviceID,Label".executeCommand()
-                        .lines().firstOrNull { it.contains("Removable") }?.split(" ")?.firstOrNull()
-                    volume?.let { callback(device, File(it)) }
+        // 寻找已经连接的指定id的u盘, 这样可以不用拔出来再插回去来识别
+        val initCurrentDevices = mutableMapOf<String, File>()
+        updateWindowsUDrives(initCurrentDevices)
+        // 检测设备
+        initCurrentDevices.forEach { (id, root) ->
+            if (initCurrentDevices.contains(id)) {
+                detectedDevices[id] = root
+                callback(UsbEvent.INSERT, id, root)
+            }
+        }
+
+        while (true) {
+            val currentDevices = mutableMapOf<String, File>()
+            updateWindowsUDrives(currentDevices)
+
+            // 检测新增设备
+            currentDevices.forEach { (id, root) ->
+                if (!detectedDevices.containsKey(id)) {
+                    detectedDevices[id] = root
+                    callback(UsbEvent.INSERT, id, root)
                 }
             }
+
+            // 检测移除设备
+            detectedDevices.keys.filterNot { currentDevices.containsKey(it) }.forEach { id ->
+                callback(UsbEvent.REMOVE, id, detectedDevices[id]!!)
+                detectedDevices.remove(id)
+            }
+
             delay(1000)
         }
     } else if (OS.currentOS == OS.OperatingSystem.LINUX) {
-        println("StartListenerService")
-        // TODO Test
-        callback("test", File("/media/octest/ESD-USB/"))
+        // 维护已检测到的设备映射
+        val detectedDevices = mutableMapOf<String, File>()
+
+        val mediaPath = Paths.get("/media/${System.getProperty("user.name")}")
+        // 确保用户媒体目录存在
+        Files.createDirectories(mediaPath)
+
+        // 新增：扫描现有挂载点（支持指定ID过滤）
+        if (Files.exists(mediaPath)) {
+            Files.list(mediaPath).use { stream ->
+                stream.filter { Files.isDirectory(it) }
+                    .forEach { path ->
+                        val id = path.fileName.toString()
+                        // 如果initDriversId为空 或 ID在指定集合中，则触发事件
+                        if (initDriversId.isEmpty() || id in initDriversId) {
+                            detectedDevices[id] = path.toFile()
+                            callback(UsbEvent.INSERT, id, path.toFile())
+                        }
+                    }
+            }
+        }
+
+        val watchService: WatchService = mediaPath.fileSystem.newWatchService()
+        mediaPath.register(watchService, ENTRY_CREATE, ENTRY_DELETE)
+
+        while (true) {
+            val key = watchService.take()
+            key.pollEvents().forEach { event ->
+                // 修复：显式将 event.context() 转换为 Path 类型
+                val context = event.context() as? Path
+                if (context != null) {
+                    // 修复：使用正确的 resolve 重载方法
+                    val devicePath = mediaPath.resolve(context)
+                    val id = context.toString()
+                    when (event.kind()) {
+                        ENTRY_CREATE -> {
+                            if (Files.isDirectory(devicePath)) {
+                                // 避免重复触发已有设备
+                                if (!detectedDevices.containsKey(id)) {
+                                    detectedDevices[id] = devicePath.toFile()
+                                    callback(UsbEvent.INSERT, id, devicePath.toFile())
+                                }
+                            }
+                        }
+
+                        ENTRY_DELETE -> {
+                            if (detectedDevices.containsKey(id)) {
+                                callback(UsbEvent.REMOVE, id, detectedDevices[id]!!)
+                                detectedDevices.remove(id)
+                            }
+                        }
+
+                        else -> {}
+                    }
+                }
+            }
+            key.reset()
+        }
     }
+}
+
+private fun updateWindowsUDrives(detectedDevices: MutableMap<String, File>) {
+    // 获取当前连接的USB存储设备
+    val result = "wmic path Win32_Volume where DriveType=2 get DeviceID,DriveLetter".executeCommand()
+    val currentDevices = mutableMapOf<String, File>()
+
+    // 解析设备ID和盘符
+    result.lines()
+        .filter { it.contains("DeviceID") || it.contains("DriveLetter") }
+        .chunked(2) { chunk ->
+            val idLine = chunk.find { it.startsWith("DeviceID") }
+            val driveLine = chunk.find { it.startsWith("DriveLetter") }
+            if (idLine != null && driveLine != null) {
+                val id = idLine.substringAfter("=").trim()
+                val drive = driveLine.substringAfter("=").trim()
+                if (drive.isNotBlank()) {
+                    currentDevices[id] = File("$drive\\")
+                }
+            }
+        }
 }
 
 // 扩展函数：执行命令并返回结果

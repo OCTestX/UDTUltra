@@ -1,52 +1,39 @@
 package io.github.octest.udtultra.logic
 
-import androidx.compose.runtime.State
-import androidx.compose.runtime.mutableStateOf
 import io.github.octest.udtultra.DirRecorder
 import io.github.octest.udtultra.repository.SettingRepository
 import io.github.octest.udtultra.repository.UDTDatabase
+import io.github.octest.udtultra.repository.database.DirTreeEntry
+import io.github.octestx.basic.multiplatform.common.utils.sec
+import io.klogging.noCoLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 object Daemon {
+    private val ologger = noCoLogger<Daemon>()
     private val ioscope = CoroutineScope(Dispatchers.IO)
     private val scope = CoroutineScope(Dispatchers.Main)
-    private val _daemonSwitch = mutableStateOf(loadFromFile())
-    val daemonSwitch: State<Boolean> = _daemonSwitch
 
     @OptIn(ExperimentalAtomicApi::class)
-    suspend fun start() {
+    fun start() {
         ioscope.launch {
-            usbStorageListener { id, root ->
-                scope.launch {
-                    if (daemonSwitch.value) {
-                        println("NewInsert: $id, $root")
-                        DirRecorder(UDTDatabase.DirTreeEntry("NAME_$id", root, id, root.totalSpace, root.freeSpace))
-                            .start()
+            usbStorageListener(UDTDatabase.getEntrys().map { it.id }.toSet()) { event, id, root ->
+                if (event == UsbEvent.INSERT) {
+                    ologger.info { "NewInsert: $id, $root" }
+                    scope.launch {
+                        delay(10.sec)
+                        if (SettingRepository.daemonSwitch.value) {
+                            DirRecorder(DirTreeEntry("NAME_$id", root, id, root.totalSpace, root.freeSpace))
+                                .start()
+                        } else {
+                            ologger.info { "Daemon is disabled, so skip it" }
+                        }
                     }
                 }
             }
         }
-    }
-
-    @OptIn(ExperimentalAtomicApi::class)
-    fun switch(enable: Boolean) {
-        scope.launch {
-            _daemonSwitch.value = enable
-            saveToFile()
-        }
-    }
-
-    @OptIn(ExperimentalAtomicApi::class)
-    private fun saveToFile() {
-        scope.launch {
-            SettingRepository.settings.putBoolean("daemonSwitch", daemonSwitch.value)
-        }
-    }
-
-    private fun loadFromFile(): Boolean {
-        return SettingRepository.settings.getBoolean("daemonSwitch", true)
     }
 }

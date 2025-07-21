@@ -30,6 +30,8 @@ import compose.icons.tablericons.ArrowUp
 import compose.icons.tablericons.X
 import io.github.octest.udtultra.repository.FileTreeManager
 import io.github.octest.udtultra.repository.UDTDatabase
+import io.github.octest.udtultra.repository.database.DirRecord
+import io.github.octest.udtultra.repository.database.DirTreeEntry
 import io.klogging.noCoLogger
 import kotlinx.coroutines.*
 import java.io.File
@@ -38,12 +40,13 @@ import java.util.*
 
 object WorkStacker {
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val uiScope = CoroutineScope(Dispatchers.Main)
     private val workers = mutableStateMapOf<String, Worker>()
-    suspend fun putWork(worker: Worker) {
+    suspend fun putWork(worker: Worker): Job {
         withContext(Dispatchers.Main) {
             workers[worker.id] = worker
         }
-        scope.launch {
+        return scope.launch {
             worker.run()
         }
     }
@@ -55,8 +58,10 @@ object WorkStacker {
         var showPopup by remember { mutableStateOf(false) }
 
         Row {
-            // 只显示第一个任务
-            WorkerRow(workers.values.first(), Modifier.weight(1f))
+            Box(modifier = Modifier.weight(1f)) {
+                // 只显示第一个任务
+                WorkerRow(workers.values.first(), Modifier.align(Alignment.CenterStart))
+            }
 
             // 添加展开按钮
             IconButton(onClick = { showPopup = true }) {
@@ -102,7 +107,10 @@ object WorkStacker {
                             LazyColumn(state = scrollState) {
                                 items(workers.values.toList(), key = { it.id }) { worker ->
                                     Card(modifier = Modifier.padding(3.dp).clip(MaterialTheme.shapes.extraSmall)) {
-                                        WorkerRow(worker, modifier = Modifier.padding(6.dp))
+                                        WorkerRow(
+                                            worker,
+                                            modifier = Modifier.padding(6.dp).align(Alignment.CenterHorizontally)
+                                        )
                                     }
                                 }
                             }
@@ -132,19 +140,29 @@ object WorkStacker {
                         progress = worker.progress,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Text(
+                        text = worker.message,
+                        modifier = Modifier.align(Alignment.End)
+                    )
                 }
 
             ProgressType.Running ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = modifier
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp).padding(4.dp)
-                    )
+                Column(Modifier.fillMaxWidth()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = modifier
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp).padding(4.dp)
+                        )
+                        Text(
+                            text = worker.title,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                     Text(
-                        text = worker.title,
-                        modifier = Modifier.weight(1f)
+                        text = worker.message,
+                        modifier = Modifier.align(Alignment.End)
                     )
                 }
         }
@@ -157,7 +175,9 @@ object WorkStacker {
     suspend fun Worker.run() {
         try {
             coroutineScope {
-                val workScope = WorkScopeImpl(this@run)
+                val workScope = WorkScopeImpl(this@run) {
+                    throw CancellationException("任务取消", it)
+                }
                 workScope.apply {
                     work()
                 }
@@ -170,27 +190,42 @@ object WorkStacker {
         }
     }
 
-    class WorkScopeImpl(private val worker: Worker) : WorkScope() {
+    class WorkScopeImpl(private val worker: Worker, private val cancel: (e: Throwable?) -> Unit) : WorkScope() {
         override suspend fun setTitle(title: String) {
-            withContext(Dispatchers.Main) {
-                worker.title = title
+            uiScope.launch {
+                withContext(Dispatchers.Main) {
+                    worker.title = title
+                }
             }
         }
 
         override suspend fun setProgress(progress: Float) {
-            withContext(Dispatchers.Main) {
-                worker.progress = progress
+            uiScope.launch {
+                withContext(Dispatchers.Main) {
+                    worker.progress = progress
+                }
+            }
+        }
+
+        override suspend fun setMessage(message: String) {
+            uiScope.launch {
+                withContext(Dispatchers.Main) {
+                    worker.message = message
+                }
             }
         }
 
         override suspend fun setProgressType(type: ProgressType) {
-            withContext(Dispatchers.Main) {
-                worker.progressType = type
+            uiScope.launch {
+                withContext(Dispatchers.Main) {
+                    worker.progressType = type
+                }
             }
         }
 
         override fun throwErrorAndCancel(error: Throwable) {
             worker.error = error
+            cancel(error)
             throw error
         }
     }
@@ -198,6 +233,7 @@ object WorkStacker {
     abstract class WorkScope {
         abstract suspend fun setTitle(title: String)
         abstract suspend fun setProgress(progress: Float)
+        abstract suspend fun setMessage(message: String)
         abstract suspend fun setProgressType(type: ProgressType)
         abstract fun throwErrorAndCancel(error: Throwable)
     }
@@ -229,6 +265,7 @@ object WorkStacker {
         var progress by mutableStateOf(0f)
         var progressType by mutableStateOf(workInfo.progressType)
         var error by mutableStateOf<Throwable?>(null)
+        var message by mutableStateOf("")
     }
 }
 
@@ -293,8 +330,8 @@ object Workers {
     }
 
     fun copyDirWorker(
-        entry: UDTDatabase.DirTreeEntry,
-        from: UDTDatabase.DirRecord,
+        entry: DirTreeEntry,
+        from: DirRecord,
         to: File,
         append: Boolean = false,
         after: suspend (exception: Throwable?) -> Unit
