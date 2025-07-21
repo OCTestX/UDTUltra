@@ -31,6 +31,8 @@ import io.github.octest.udtultra.ui.pages.MainPage.MainPageAction.SwitchPath
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.github.octestx.basic.multiplatform.ui.ui.core.AbsUIPage
 import io.klogging.noCoLogger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import java.io.File
@@ -168,9 +170,12 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
                         }
                         val source = FileTreeManager.getExitsFile(entry, action.file.relationFilePath)
                         source.onSuccess { source ->
-                            WorkStacker.putWork(copyFileWorker(source, target, append = true) {
-                                ologger.info { "复制完成" }
-                            })
+                            val ioscope = CoroutineScope(Dispatchers.IO)
+                            ioscope.launch {
+                                WorkStacker.putWork(copyFileWorker(source, target, append = true) {
+                                    ologger.info { "复制完成" }
+                                })
+                            }
                         }
                         source.onFailure {
 //                            toast.applyShow(ToastModel("复制失败",  type = ToastModel.Type.Error))
@@ -187,10 +192,12 @@ object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageActio
                         if (target.exists()) {
                             target.delete()
                         }
-                        action.dir.relationDirPath
-                        WorkStacker.putWork(copyDirWorker(entry, action.dir, target) {
-                            ologger.info { "文件夹复制完成" }
-                        })
+                        val ioscope = CoroutineScope(Dispatchers.IO)
+                        ioscope.launch {
+                            WorkStacker.putWork(copyDirWorker(entry, action.dir, target) {
+                                ologger.info { "文件夹复制完成" }
+                            })
+                        }
                     }
                 }
 

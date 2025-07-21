@@ -198,11 +198,11 @@ object UDTDatabase {
             }
     }
 
-    fun deepSeek(
+    suspend fun deepSeek(
         entry: DirTreeEntry,
         path: String,
-        seekFile: (relationPath: String) -> Unit,
-        seekDir: (relationPath: String) -> Unit
+        seekFile: suspend (relationPath: String) -> Unit,
+        seekDir: suspend (relationPath: String) -> Unit
     ) {
         // 获取当前路径下的文件
         val files = getFiles(entry, path)
