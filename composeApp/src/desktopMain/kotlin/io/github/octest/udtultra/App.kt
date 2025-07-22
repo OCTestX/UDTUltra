@@ -6,74 +6,42 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import io.github.octest.udtultra.ui.pages.MainPage
-import io.klogging.logger
+import io.github.octest.udtultra.ui.pages.FileBrowserPageMVIBackend
+import io.github.octest.udtultra.ui.pages.FileBrowserUI
+import io.klogging.noCoLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import moe.tlaster.precompose.navigation.NavHost
+import moe.tlaster.precompose.navigation.path
+import moe.tlaster.precompose.navigation.rememberNavigator
 import org.jetbrains.compose.ui.tooling.preview.Preview
 
 @Composable
 @Preview
 fun App() {
     remember {
-        logger("KRecallRouter")
+        noCoLogger("KRecallRouter")
     }
-    val ioscope = remember { CoroutineScope(Dispatchers.IO) }
-    val navigator = rememberNavController()
+    remember { CoroutineScope(Dispatchers.IO) }
+    val navigator = rememberNavigator()
     NavHost(
         navigator,
-        startDestination = "/main",
+        initialRoute = "/fileBrowser",
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        composable("/main") {
-            MainPage.Main(Unit)
+        scene("/fileBrowser") {
+            val backend = remember {
+                FileBrowserPageMVIBackend(jumpToUDiskEditor = {
+                    navigator.navigate("/UDiskEditor/$it")
+                })
+            }
+            FileBrowserUI(backend, backend.CurrentState())
         }
-        composable("/personalDictionary") {
-            LaunchedEffect(Unit) {
-                PersonalDictionaryRepository.refreshAllWords()
-            }
-            val model = remember {
-                PersonalDictionaryPage.PersonalDictionaryPageModel(
-                    PersonalDictionaryRepository.allWords,
-                    removeWord = {
-                        ioscope.launch {
-                            PersonalDictionaryRepository.removeWord(it)
-                        }
-                    },
-                    {
-                        navigator.popBackStack()
-                    },
-                    {
-                        navigator.navigate("/wordInfo/$it")
-                    }
-                )
-            }
-            val page = remember { PersonalDictionaryPage(model) }
-            page.Main(Unit)
-        }
-        composable("/wordInfo/{word}") {
-            val word = it.arguments?.getString("word")
-            if (word == null) {
-                LaunchedEffect(Unit) {
-                    toast.showBlocking("Error: $word is null")
-                    navigator.popBackStack()
-                }
-            } else {
-                val model = remember {
-                    WordInfoPage.WordInfoPageModel(word) {
-                        navigator.popBackStack()
-                    }
-                }
-                val page = remember { WordInfoPage(model) }
-                page.Main(Unit)
-            }
+        scene("/UDiskEditor/{UDiskId}") { backStackEntry ->
+            backStackEntry.path<String>("UDiskId")!!
         }
     }
 }

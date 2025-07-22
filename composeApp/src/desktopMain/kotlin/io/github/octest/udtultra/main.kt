@@ -7,6 +7,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberTrayState
 import io.github.octestx.basic.multiplatform.common.utils.OS
 import io.github.octestx.basic.multiplatform.ui.ui.BasicMUIWrapper
+import moe.tlaster.precompose.PreComposeApp
 import org.jetbrains.compose.resources.painterResource
 import udtultra.composeapp.generated.resources.Res
 import udtultra.composeapp.generated.resources.icon
@@ -27,7 +28,9 @@ fun main() {
             title = "UDTUltra",
         ) {
             BasicMUIWrapper {
-                App()
+                PreComposeApp {
+                    App()
+                }
             }
         }
         Tray(

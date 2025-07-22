@@ -30,11 +30,11 @@ import io.github.octest.udtultra.ui.DirItemUI
 import io.github.octest.udtultra.ui.FileInfoDialog
 import io.github.octest.udtultra.ui.FileItemUI
 import io.github.octest.udtultra.ui.animation.DelayShowAnimationFromTopLeft
-import io.github.octest.udtultra.ui.pages.MainPage.MainPageAction.SwitchPath
+import io.github.octest.udtultra.ui.pages.FileBrowserPageMVIBackend.MainPageEvent.SwitchPath
 import io.github.octestx.basic.multiplatform.common.utils.gb
 import io.github.octestx.basic.multiplatform.common.utils.kb
 import io.github.octestx.basic.multiplatform.common.utils.storage
-import io.github.octestx.basic.multiplatform.ui.ui.core.AbsUIPage
+import io.github.octestx.basic.multiplatform.ui.ui.utils.MVIBackend
 import io.klogging.noCoLogger
 import kotlinx.coroutines.*
 import org.jetbrains.compose.ui.tooling.preview.Preview
@@ -44,241 +44,16 @@ import java.io.File
  * 主页面对象，继承自AbsUIPage
  * 管理文件浏览相关状态和UI展示
  */
-object MainPage : AbsUIPage<Unit, MainPage.MainPageState, MainPage.MainPageAction>(MainPageModel()) {
-    private val ologger = noCoLogger<MainPage>()
-
-    @Composable
-    override fun UI(state: MainPageState) {
-        FileBrowserUI(
-            state.entrys,
-            state.currentEntry,
-            state.currentPath,
-            state.currentFiles,
-            state.currentDirs,
-            canBack = state.canBack,
-            reload = {
-                state.action(MainPageAction.ReloadData)
-            },
-            selectedEntry = {
-                state.action(MainPageAction.SelectedEntry(it))
-            },
-            intoDirectory = {
-                state.action(MainPageAction.IntoDirectory(it))
-            },
-            backDirectory = {
-                state.action(MainPageAction.BackDirectory)
-            },
-            sendFileTo = {
-                state.action(MainPageAction.SendFileTo(it))
-            },
-            sendFileToDesktop = {
-                state.action(MainPageAction.SendFileToDesktop(it))
-            },
-            deleteAndBanFile = {
-                state.action(MainPageAction.DeleteAndBanFile(it))
-            },
-            sendDirTo = {
-                state.action(MainPageAction.SendDirTo(it))
-            },
-            sendDirToDesktop = {
-                state.action(MainPageAction.SendDirToDesktop(it))
-            },
-            deleteAndBanDir = {
-                state.action(MainPageAction.DeleteAndBanDir(it))
-            }
-        )
-    }
-
-    /**
-     * 页面状态类
-     * @param entrys 根目录条目列表
-     * @param currentEntry 当前选中的根目录
-     * @param currentPath 当前浏览路径
-     * @param currentFiles 当前目录下的文件列表
-     * @param currentDirs 当前目录下的子目录列表
-     * @param action 事件回调
-     */
-    data class MainPageState(
-        val entrys: List<DirTreeEntry>,
-        val currentEntry: DirTreeEntry?,
-        val currentPath: String,
-        val currentFiles: List<FileRecord>,
-        val currentDirs: List<DirRecord>,
-        val canBack: Boolean,
-        val action: (MainPageAction) -> Unit,
-    ) : AbsUIState<MainPageAction>()
-
-    class MainPageModel() : AbsUIModel<Unit, MainPageState, MainPageAction>() {
-        private var reloadNotify by mutableIntStateOf(0)
-        private val entrys = mutableStateListOf<DirTreeEntry>()
-        private var currentEntry: DirTreeEntry? by mutableStateOf(entrys.firstOrNull())
-        private var currentPath: String by mutableStateOf("")
-        private val currentFiles = mutableStateListOf<FileRecord>()
-        private val currentDirs = mutableStateListOf<DirRecord>()
-
-        /**
-         * 创建页面状态
-         * 包含LaunchedEffect监听路径变化
-         */
-        @Composable
-        override fun CreateState(params: Unit): MainPageState {
-            LaunchedEffect(currentEntry, currentPath, reloadNotify) {
-                entrys.clear()
-                entrys.addAll(UDTDatabase.getEntrys())
-                val entry = currentEntry
-                if ((entry?.id in entrys.map { it.id }).not()) {
-                    currentEntry = if (entrys.isEmpty()) null
-                    else entrys.first()
-                }
-                ologger.info { "ReloadData: $currentPath" }
-                if (entry != null) {
-                    currentFiles.clear()
-                    currentDirs.clear()
-                    // 加载当前目录下的文件和子目录
-                    currentFiles.addAll(UDTDatabase.getFiles(entry, currentPath))
-                    currentDirs.addAll(UDTDatabase.getDirs(entry, currentPath))
-                }
-            }
-            return MainPageState(
-                entrys, currentEntry, currentPath, currentFiles, currentDirs, canBack = currentPath.isNotEmpty(),
-                action = {
-                    actionExecute(params, it)
-                }
-            )
-        }
-
-        /**
-         * 事件处理器
-         * 处理路径切换、进入目录、返回目录等操作
-         */
-        override fun actionExecute(params: Unit, action: MainPageAction) {
-            when (action) {
-                MainPageAction.ReloadData -> {
-                    reloadNotify++
-                }
-                is SwitchPath -> {
-                    // 处理路径切换，标准化路径格式
-                    val t1 = if (action.path.startsWith(File.separator))
-                        action.path.removePrefix(File.separator) else action.path
-                    currentPath = if (t1.endsWith(File.separator)) {
-                        t1.removeSuffix(File.separator)
-                    } else t1
-                }
-
-                is MainPageAction.IntoDirectory -> {
-                    // 进入子目录：拼接新路径
-                    actionExecute(params, SwitchPath(currentPath + File.separator + action.dirName))
-                }
-
-                is MainPageAction.BackDirectory -> {
-                    // 返回上一级目录：移除当前路径最后一段
-                    actionExecute(
-                        params,
-                        SwitchPath(currentPath.removeSuffix(currentPath.split(File.separator).last()))
-                    )
-                }
-                is MainPageAction.SelectedEntry -> {
-                    // 选择根目录：切换当前目录
-                    currentEntry = action.entry
-                    currentPath = ""
-                }
-                is MainPageAction.DeleteAndBanFile -> TODO()
-                is MainPageAction.SendFileTo -> TODO()
-                is MainPageAction.SendFileToDesktop -> {
-                    val entry = currentEntry
-                    if (entry != null) {
-                        val target = File("/home/octest/Desktop", action.file.fileName)
-                        if (target.exists()) {
-                            target.delete()
-                        }
-                        val source = FileTreeManager.getExitsFile(entry, action.file.relationFilePath)
-                        source.onSuccess { source ->
-                            val ioscope = CoroutineScope(Dispatchers.IO)
-                            ioscope.launch {
-                                WorkStacker.putWork(copyFileWorker(source, target, append = true) {
-                                    ologger.info { "复制完成" }
-                                })
-                            }
-                        }
-                        source.onFailure {
-//                            toast.applyShow(ToastModel("复制失败",  type = ToastModel.Type.Error))
-                            ologger.error(it) { "复制失败" }
-                        }
-                    }
-                }
-
-                is MainPageAction.SendDirTo -> TODO()
-                is MainPageAction.SendDirToDesktop -> {
-                    val entry = currentEntry
-                    if (entry != null) {
-                        val target = File("/home/octest/Desktop/TEST1", action.dir.dirName)
-                        if (target.exists()) {
-                            target.delete()
-                        }
-                        val ioscope = CoroutineScope(Dispatchers.IO)
-                        ioscope.launch {
-                            WorkStacker.putWork(copyDirWorker(entry, action.dir, target) {
-                                ologger.info { "文件夹复制完成" }
-                            })
-                        }
-                    }
-                }
-
-                is MainPageAction.DeleteAndBanDir -> TODO()
-            }
-        }
-    }
-
-    /**
-     * 页面动作密封类
-     * 包含路径切换、进入目录、返回目录等操作
-     */
-    sealed class MainPageAction : AbsUIAction() {
-        data object ReloadData : MainPageAction()
-        data class SwitchPath(val path: String) : MainPageAction()
-        data class IntoDirectory(val dirName: String) : MainPageAction()
-        data object BackDirectory : MainPageAction()
-        data class SelectedEntry(val entry: DirTreeEntry) : MainPageAction()
-        data class SendFileTo(val file: FileRecord) : MainPageAction()
-        data class SendFileToDesktop(val file: FileRecord) : MainPageAction()
-        data class DeleteAndBanFile(val file: FileRecord) : MainPageAction()
-        data class SendDirTo(val dir: DirRecord) : MainPageAction()
-        data class SendDirToDesktop(val dir: DirRecord) : MainPageAction()
-        data class DeleteAndBanDir(val dir: DirRecord) : MainPageAction()
-    }
-}
-
 /**
  * 文件浏览器UI组件
  * 展示目录树和文件列表
- * @param entrys 根目录条目
- * @param currentEntry 当前根目录
- * @param currentPath 当前路径
- * @param currentFiles 当前文件列表
- * @param currentDirs 当前目录列表
- * @param intoDirectory 进入目录回调
- * @param backDirectory 返回目录回调
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Preview
 @Composable
 fun FileBrowserUI(
-    entrys: List<DirTreeEntry>,
-    currentEntry: DirTreeEntry?,
-    currentPath: String,
-    currentFiles: List<FileRecord>,
-    currentDirs: List<DirRecord>,
-    canBack: Boolean,
-    reload: () -> Unit,
-    selectedEntry: (DirTreeEntry) -> Unit,
-    intoDirectory: (String) -> Unit,
-    backDirectory: () -> Unit,
-    sendFileTo: (FileRecord) -> Unit,
-    sendFileToDesktop: (FileRecord) -> Unit,
-    deleteAndBanFile: (FileRecord) -> Unit,
-    sendDirTo: (DirRecord) -> Unit,
-    sendDirToDesktop: (DirRecord) -> Unit,
-    deleteAndBanDir: (DirRecord) -> Unit
+    backend: FileBrowserPageMVIBackend,
+    state: FileBrowserPageMVIBackend.FileBrowserPageIntentState,
 ) {
     // 添加文件详情弹窗状态
     var selectedFile by remember { mutableStateOf<FileRecord?>(null) }
@@ -289,7 +64,6 @@ fun FileBrowserUI(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     // 添加列表加载状态
     val isLoading by remember { mutableStateOf(false) }
-
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -337,11 +111,11 @@ fun FileBrowserUI(
                         state = drawerListState,
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(entrys, key = { it.id }) { entry ->
-                            val isSelected = currentEntry?.id == entry.id
+                        items(state.entrys, key = { it.id }) { entry ->
+                            val isSelected = state.currentEntry?.id == entry.id
                             Card(
                                 onClick = {
-                                    selectedEntry(entry)
+                                    backend.emitIntent(FileBrowserPageMVIBackend.MainPageEvent.SelectedEntry(entry))
                                 },
                                 Modifier.padding(4.dp),
                                 colors = CardDefaults.cardColors(
@@ -362,7 +136,11 @@ fun FileBrowserUI(
                                         )
                                     }
                                     IconButton(onClick = {
-                                        dsaf
+                                        backend.emitIntent(
+                                            FileBrowserPageMVIBackend.MainPageEvent.JumpToUDiskEditor(
+                                                entry
+                                            )
+                                        )
                                     }) {
                                         Icon(TablerIcons.Edit, contentDescription = null)
                                     }
@@ -382,18 +160,42 @@ fun FileBrowserUI(
             FileInfoDialog(
                 it,
                 cleanSelectedFile = { selectedFile = null },
-                sendFileTo = sendFileTo,
-                sendFileToDesktop = sendFileToDesktop,
-                deleteAndBanFile = deleteAndBanFile
+                sendFileTo = { file -> backend.emitIntent(FileBrowserPageMVIBackend.MainPageEvent.SendFileTo(file)) },
+                sendFileToDesktop = { file ->
+                    backend.emitIntent(
+                        FileBrowserPageMVIBackend.MainPageEvent.SendFileToDesktop(
+                            file
+                        )
+                    )
+                },
+                deleteAndBanFile = { file ->
+                    backend.emitIntent(
+                        FileBrowserPageMVIBackend.MainPageEvent.DeleteAndBanFile(
+                            file
+                        )
+                    )
+                }
             )
         }
         selectedDir?.let {
             DirInfoDialog(
                 it,
                 cleanSelectedDir = { selectedDir = null },
-                sendDirTo = sendDirTo,
-                sendDirToDesktop = sendDirToDesktop,
-                deleteAndBanDir = deleteAndBanDir
+                sendDirTo = { file -> backend.emitIntent(FileBrowserPageMVIBackend.MainPageEvent.SendDirTo(file)) },
+                sendDirToDesktop = { file ->
+                    backend.emitIntent(
+                        FileBrowserPageMVIBackend.MainPageEvent.SendDirToDesktop(
+                            file
+                        )
+                    )
+                },
+                deleteAndBanDir = { file ->
+                    backend.emitIntent(
+                        FileBrowserPageMVIBackend.MainPageEvent.DeleteAndBanDir(
+                            file
+                        )
+                    )
+                }
             )
         }
 
@@ -403,7 +205,7 @@ fun FileBrowserUI(
                 TopAppBar(
                     title = {
                         Text(
-                            text = currentPath,
+                            text = state.currentPath,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -420,13 +222,15 @@ fun FileBrowserUI(
                     },
                     actions = {
                         Row {
-                            AnimatedVisibility(canBack) {
-                                IconButton(onClick = backDirectory) {
+                            AnimatedVisibility(state.canBack) {
+                                IconButton(onClick = {
+                                    backend.emitIntent(FileBrowserPageMVIBackend.MainPageEvent.BackDirectory)
+                                }) {
                                     Icon(TablerIcons.ArrowBack, contentDescription = "返回上一级")
                                 }
                             }
                             IconButton(onClick = {
-                                reload()
+                                backend.emitIntent(FileBrowserPageMVIBackend.MainPageEvent.ReloadData)
                             }) {
                                 Icon(TablerIcons.Loader, contentDescription = "Reload")
                             }
@@ -459,7 +263,7 @@ fun FileBrowserUI(
                                 .fillMaxSize()
                         ) {
                             items(
-                                items = currentFiles,
+                                items = state.currentFiles,
                                 key = { it.relationFilePath }
                             ) { file ->
                                 DelayShowAnimationFromTopLeft(
@@ -472,13 +276,19 @@ fun FileBrowserUI(
                                 }
                             }
                             items(
-                                items = currentDirs,
+                                items = state.currentDirs,
                                 key = { it.relationDirPath }
                             ) { dir ->
                                 DelayShowAnimationFromTopLeft(modifier = Modifier.animateItem()) {
                                     DirItemUI(
                                         dir = dir,
-                                        click = { intoDirectory(dir.dirName) },
+                                        click = {
+                                            backend.emitIntent(
+                                                FileBrowserPageMVIBackend.MainPageEvent.IntoDirectory(
+                                                    dir.dirName
+                                                )
+                                            )
+                                        },
                                         clickInfo = {
                                             selectedDir = dir
                                         }
@@ -495,6 +305,171 @@ fun FileBrowserUI(
                 WorkStacker.WorkerMiniComponent()
             }
         }
+    }
+}
+
+
+class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: DirTreeEntry) -> Unit) :
+    MVIBackend<FileBrowserPageMVIBackend.FileBrowserPageIntentState, FileBrowserPageMVIBackend.MainPageEvent>() {
+    private val ologger = noCoLogger<FileBrowserPageMVIBackend>()
+    private var reloadNotify by mutableIntStateOf(0)
+    private val entrys = mutableStateListOf<DirTreeEntry>()
+    private var currentEntry: DirTreeEntry? by mutableStateOf(entrys.firstOrNull())
+    private var currentPath: String by mutableStateOf("")
+    private val currentFiles = mutableStateListOf<FileRecord>()
+    private val currentDirs = mutableStateListOf<DirRecord>()
+
+    /**
+     * 事件处理器
+     * 处理路径切换、进入目录、返回目录等操作
+     */
+    override suspend fun processIntent(event: MainPageEvent) {
+        when (event) {
+            MainPageEvent.ReloadData -> {
+                reloadNotify++
+            }
+
+            is SwitchPath -> {
+                // 处理路径切换，标准化路径格式
+                val t1 = if (event.path.startsWith(File.separator))
+                    event.path.removePrefix(File.separator) else event.path
+                currentPath = if (t1.endsWith(File.separator)) {
+                    t1.removeSuffix(File.separator)
+                } else t1
+            }
+
+            is MainPageEvent.IntoDirectory -> {
+                // 进入子目录：拼接新路径
+                processIntent(SwitchPath(currentPath + File.separator + event.dirName))
+            }
+
+            is MainPageEvent.BackDirectory -> {
+                // 返回上一级目录：移除当前路径最后一段
+                processIntent(
+                    SwitchPath(currentPath.removeSuffix(currentPath.split(File.separator).last()))
+                )
+            }
+
+            is MainPageEvent.SelectedEntry -> {
+                // 选择根目录：切换当前目录
+                currentEntry = event.entry
+                currentPath = ""
+            }
+
+            is MainPageEvent.DeleteAndBanFile -> TODO()
+            is MainPageEvent.SendFileTo -> TODO()
+            is MainPageEvent.SendFileToDesktop -> {
+                val entry = currentEntry
+                if (entry != null) {
+                    val target = File("/home/octest/Desktop", event.file.fileName)
+                    if (target.exists()) {
+                        target.delete()
+                    }
+                    val source = FileTreeManager.getExitsFile(entry, event.file.relationFilePath)
+                    source.onSuccess { source ->
+                        val ioscope = CoroutineScope(Dispatchers.IO)
+                        ioscope.launch {
+                            WorkStacker.putWork(copyFileWorker(source, target, append = true) {
+                                ologger.info { "复制完成" }
+                            })
+                        }
+                    }
+                    source.onFailure {
+//                            toast.applyShow(ToastModel("复制失败",  type = ToastModel.Type.Error))
+                        ologger.error(it) { "复制失败" }
+                    }
+                }
+            }
+
+            is MainPageEvent.SendDirTo -> TODO()
+            is MainPageEvent.SendDirToDesktop -> {
+                val entry = currentEntry
+                if (entry != null) {
+                    val target = File("/home/octest/Desktop/TEST1", event.dir.dirName)
+                    if (target.exists()) {
+                        target.delete()
+                    }
+                    val ioscope = CoroutineScope(Dispatchers.IO)
+                    ioscope.launch {
+                        WorkStacker.putWork(copyDirWorker(entry, event.dir, target) {
+                            ologger.info { "文件夹复制完成" }
+                        })
+                    }
+                }
+            }
+
+            is MainPageEvent.DeleteAndBanDir -> TODO()
+            is MainPageEvent.JumpToUDiskEditor -> jumpToUDiskEditor(event.entry)
+        }
+
+    }
+
+
+    /**
+     * 创建页面状态
+     * 包含LaunchedEffect监听路径变化
+     */
+    @Composable
+    override fun CalculateState(): FileBrowserPageIntentState {
+        LaunchedEffect(currentEntry, currentPath, reloadNotify) {
+            entrys.clear()
+            entrys.addAll(UDTDatabase.getEntrys())
+            val entry = currentEntry
+            if ((entry?.id in entrys.map { it.id }).not()) {
+                currentEntry = if (entrys.isEmpty()) null
+                else entrys.first()
+            }
+            ologger.info { "ReloadData: $currentPath" }
+            if (entry != null) {
+                currentFiles.clear()
+                currentDirs.clear()
+                // 加载当前目录下的文件和子目录
+                currentFiles.addAll(UDTDatabase.getFiles(entry, currentPath))
+                currentDirs.addAll(UDTDatabase.getDirs(entry, currentPath))
+            }
+        }
+        return FileBrowserPageIntentState(
+            entrys, currentEntry, currentPath, currentFiles, currentDirs, canBack = currentPath.isNotEmpty(),
+        )
+
+    }
+
+    /**
+     * 页面状态类
+     * @param entrys 根目录条目列表
+     * @param currentEntry 当前选中的根目录
+     * @param currentPath 当前浏览路径
+     * @param currentFiles 当前目录下的文件列表
+     * @param currentDirs 当前目录下的子目录列表
+     * @param action 事件回调
+     */
+    data class FileBrowserPageIntentState(
+        val entrys: List<DirTreeEntry>,
+        val currentEntry: DirTreeEntry?,
+        val currentPath: String,
+        val currentFiles: List<FileRecord>,
+        val currentDirs: List<DirRecord>,
+        val canBack: Boolean,
+    ) : IntentState()
+
+    /**
+     * 页面动作密封类
+     * 包含路径切换、进入目录、返回目录等操作
+     */
+    sealed class MainPageEvent : IntentEvent() {
+        data object ReloadData : MainPageEvent()
+        data class SwitchPath(val path: String) : MainPageEvent()
+        data class IntoDirectory(val dirName: String) : MainPageEvent()
+        data object BackDirectory : MainPageEvent()
+        data class SelectedEntry(val entry: DirTreeEntry) : MainPageEvent()
+        data class SendFileTo(val file: FileRecord) : MainPageEvent()
+        data class SendFileToDesktop(val file: FileRecord) : MainPageEvent()
+        data class DeleteAndBanFile(val file: FileRecord) : MainPageEvent()
+        data class SendDirTo(val dir: DirRecord) : MainPageEvent()
+        data class SendDirToDesktop(val dir: DirRecord) : MainPageEvent()
+        data class DeleteAndBanDir(val dir: DirRecord) : MainPageEvent()
+
+        data class JumpToUDiskEditor(val entry: DirTreeEntry) : MainPageEvent()
     }
 }
 

@@ -25,7 +25,7 @@ kotlin {
 
             implementation("io.github.octestx:basic-multiplatform-lib:0.1.4-DownVerB")
             implementation("io.github.octestx:basic-multiplatform-ui-lib:0.1.5")
-            implementation("androidx.navigation:navigation-compose-jvmstubs:2.9.2")
+//            implementation("androidx.navigation:navigation-compose-jvmstubs:2.9.2")
 
         }
         commonTest.dependencies {
