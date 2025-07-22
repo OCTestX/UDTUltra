@@ -25,8 +25,7 @@ object UDTDatabase {
     val DBFile = File(Const.appDir, "db.db")
     private val ktormDatabase: Database by lazy {
         Database.connect(
-            url = "jdbc:sqlite:${DBFile.absolutePath}",
-            driver = "org.sqlite.JDBC"
+            url = "jdbc:sqlite:${DBFile.absolutePath}", driver = "org.sqlite.JDBC"
         ).apply {
             // 使用扩展函数创建表
             createTableIfNotExists(Entrys)
@@ -34,9 +33,15 @@ object UDTDatabase {
             createTableIfNotExists(Dirs)
         }
     }
-    suspend fun lockEntry(entry: DirTreeEntry, block: suspend EntryWorker.() -> Unit) {
+
+    suspend fun lockEntry(entry: UDiskEntry, block: suspend EntryWorker.() -> Unit) {
         if (entry.exist().not()) {
             writeNewEntry(entry)
+        }
+        if (entry.type == UDiskEntry.Companion.Type.KEY.value) {
+            changeUDiskType(entry, UDiskEntry.Companion.Type.KEY)
+        } else if (entry.type == UDiskEntry.Companion.Type.MASTER.value) {
+            changeUDiskType(entry, UDiskEntry.Companion.Type.MASTER)
         }
         // 实现锁机制，这里简化处理
         synchronized(entry.id.intern()) {
@@ -50,12 +55,13 @@ object UDTDatabase {
         }
     }
 
-    fun writeNewEntry(entry: DirTreeEntry) {
+    fun writeNewEntry(entry: UDiskEntry) {
         ktormDatabase.insert(Entrys) {
             set(it.id, entry.id)
             set(it.name, entry.name)
             set(it.totalSpace, entry.totalSpace)
             set(it.freeSpace, entry.freeSpace)
+            set(it.type, UDiskEntry.Companion.Type.COMMON.value)
         }
     }
 
@@ -63,7 +69,7 @@ object UDTDatabase {
         suspend fun seekFile(file: File)
     }
 
-    suspend fun registerFile(entry: DirTreeEntry, file: File) {
+    suspend fun registerFile(entry: UDiskEntry, file: File) {
         ktormDatabase.insert(Files) {
             set(it.entryId, entry.id)
             set(it.filePath, getRelationPath(entry.target, file))
@@ -76,15 +82,14 @@ object UDTDatabase {
         }
     }
 
-    suspend fun writeFile(entry: DirTreeEntry, file: File) {
+    suspend fun writeFile(entry: UDiskEntry, file: File) {
         WorkStacker.putWork(
             WorkStacker.Worker(
                 WorkStacker.WorkInfo(
                     title = "正在提取U盘文件: $file",
                     type = WorkStacker.WorkType.CopyFromSource,
                     progressType = WorkStacker.ProgressType.HasProgress
-                ),
-                work = {
+                ), work = {
                     try {
                         ktormDatabase.update(Files) {
                             set(it.status, 1)
@@ -115,8 +120,7 @@ object UDTDatabase {
                                         val progress = bytesTransferred.toFloat() / totalSize
                                         setProgress(progress) // 调用进度回调
                                         stringMerger.applyString(
-                                            "progressInfo",
-                                            "${storage(bytesTransferred)}/${storage(totalSize)}"
+                                            "progressInfo", "${storage(bytesTransferred)}/${storage(totalSize)}"
                                         )
                                         ologger.debug { "正在提取U盘文件: $file [Total: $totalSize, Transferred: $bytesTransferred]" }
                                     }
@@ -141,83 +145,105 @@ object UDTDatabase {
                         ologger.error(e) { "复制出错，可能u盘被移除" }
                         throwErrorAndCancel(e)
                     }
-                }
-            )
+                })
         ).join()
     }
 
 
-    fun writeDirInfo(entry: DirTreeEntry, dir: File) {
+    fun writeDirInfo(entry: UDiskEntry, dir: File) {
         ktormDatabase.insert(Dirs) {
             set(it.entryId, entry.id)
             set(it.dirPath, getRelationPath(entry.target, dir))
             set(
-                it.parentDir,
-                getRelationPath(entry.target, dir.parentFile)
+                it.parentDir, getRelationPath(entry.target, dir.parentFile)
             ) // if equals to entry.target, parentDir is null
             set(it.fileName, dir.name)
             set(it.createDate, dir.lastModified())
             set(it.modifierDate, dir.lastModified())
         }
     }
-    fun getEntrys(): List<DirTreeEntry> {
-        return ktormDatabase
-            .from(Entrys)
-            .select()
-            .map {
-                DirTreeEntry(
-                    name = it[Entrys.name] ?: "",
-                    target = File(it[Entrys.name] ?: ""),
-                    id = it[Entrys.id] ?: "",
-                    totalSpace = it[Entrys.totalSpace] ?: 0,
-                    freeSpace = it[Entrys.freeSpace] ?: 0,
-                )
-            }.apply {
-                ologger.debug { "getEntrys: $this@apply" }
-            }
-    }
-    fun getFiles(entry: DirTreeEntry, path: String = ""): List<FileRecord> {
-        return ktormDatabase
-            .from(Files)
-            .select()
-            .where {
-                (Files.entryId eq entry.id) and (Files.parentDir eq path)
-            }
-            .map {
-                FileRecord(
-                    entryId = it[Files.entryId] ?: "",
-                    relationFilePath = it[Files.filePath] ?: "",
-                    fileName = it[Files.fileName] ?: "",
-                    parentDir = it[Files.parentDir] ?: "",
-                    size = it[Files.size] ?: 0,
-                    createDate = it[Files.createDate] ?: 0,
-                    modifierDate = it[Files.modifierDate] ?: 0,
-                    status = it[Files.status] ?: 0
-                )
-            }
+
+    fun getEntrys(): List<UDiskEntry> {
+        return ktormDatabase.from(Entrys).select().map {
+            UDiskEntry(
+                name = it[Entrys.name] ?: "",
+                target = File(it[Entrys.name] ?: ""),
+                id = it[Entrys.id] ?: "",
+                totalSpace = it[Entrys.totalSpace] ?: 0,
+                freeSpace = it[Entrys.freeSpace] ?: 0,
+                type = it[Entrys.type] ?: "Common"
+            )
+        }.apply {
+            ologger.debug { "getEntrys: $this@apply" }
+        }
     }
 
-    fun getDirs(entry: DirTreeEntry, path: String = ""): List<DirRecord> {
-        return ktormDatabase
-            .from(Dirs)
-            .select()
-            .where {
-                (Dirs.entryId eq entry.id) and (Dirs.parentDir eq path)
+    fun getEntry(id: String): UDiskEntry {
+        return ktormDatabase.from(Entrys).select().where {
+            Entrys.id.eq(id)
+        }.map {
+            UDiskEntry(
+                name = it[Entrys.name] ?: "",
+                target = File(it[Entrys.name] ?: ""),
+                id = it[Entrys.id] ?: "",
+                totalSpace = it[Entrys.totalSpace] ?: 0,
+                freeSpace = it[Entrys.freeSpace] ?: 0,
+                type = it[Entrys.type] ?: "Common"
+            )
+        }.first()
+    }
+
+    fun changeUDiskName(entry: UDiskEntry, name: String) {
+        ktormDatabase.update(Entrys) {
+            set(it.name, name)
+            where {
+                it.id.eq(entry.id)
             }
-            .map {
-                DirRecord(
-                    entryId = it[Dirs.entryId] ?: "",
-                    relationDirPath = it[Dirs.dirPath] ?: "",
-                    dirName = it[Dirs.fileName] ?: "",
-                    parentDir = it[Dirs.parentDir] ?: "",
-                    createDate = it[Dirs.createDate] ?: 0,
-                    modifierDate = it[Dirs.modifierDate] ?: 0,
-                )
+        }
+    }
+    fun changeUDiskType(entry: UDiskEntry, type: UDiskEntry.Companion.Type) {
+        ktormDatabase.update(Entrys) {
+            set(it.type, type.value)
+            where {
+                it.id.eq(entry.id)
             }
+        }
+    }
+
+    fun getFiles(entry: UDiskEntry, path: String = ""): List<FileRecord> {
+        return ktormDatabase.from(Files).select().where {
+            (Files.entryId eq entry.id) and (Files.parentDir eq path)
+        }.map {
+            FileRecord(
+                entryId = it[Files.entryId] ?: "",
+                relationFilePath = it[Files.filePath] ?: "",
+                fileName = it[Files.fileName] ?: "",
+                parentDir = it[Files.parentDir] ?: "",
+                size = it[Files.size] ?: 0,
+                createDate = it[Files.createDate] ?: 0,
+                modifierDate = it[Files.modifierDate] ?: 0,
+                status = it[Files.status] ?: 0
+            )
+        }
+    }
+
+    fun getDirs(entry: UDiskEntry, path: String = ""): List<DirRecord> {
+        return ktormDatabase.from(Dirs).select().where {
+            (Dirs.entryId eq entry.id) and (Dirs.parentDir eq path)
+        }.map {
+            DirRecord(
+                entryId = it[Dirs.entryId] ?: "",
+                relationDirPath = it[Dirs.dirPath] ?: "",
+                dirName = it[Dirs.fileName] ?: "",
+                parentDir = it[Dirs.parentDir] ?: "",
+                createDate = it[Dirs.createDate] ?: 0,
+                modifierDate = it[Dirs.modifierDate] ?: 0,
+            )
+        }
     }
 
     suspend fun deepSeek(
-        entry: DirTreeEntry,
+        entry: UDiskEntry,
         path: String,
         seekFile: suspend (relationPath: String) -> Unit,
         seekDir: suspend (relationPath: String) -> Unit
@@ -237,27 +263,20 @@ object UDTDatabase {
         }
     }
 
-    fun DirTreeEntry.exist(): Boolean {
-        return ktormDatabase
-            .from(Entrys)
-            .select()
-            .where { Entrys.id eq this.id }
-            .map { true }
-            .isNotEmpty()
+    fun UDiskEntry.exist(): Boolean {
+        return ktormDatabase.from(Entrys).select().where { Entrys.id eq this.id }.map { true }.isNotEmpty()
     }
 
     class EntryWorkerImpl(
-        private val entry: DirTreeEntry
+        private val entry: UDiskEntry
     ) : EntryWorker {
         override suspend fun seekFile(file: File) {
             if (file.isFile) {
-                val recordStatus = ktormDatabase
-                    .from(Files)
-                    .select()
-                    .where { Files.filePath eq (getRelationPath(entry.target, file)) }
-                    .map {
-                        it[Files.status]
-                    }.firstOrNull()
+                val recordStatus =
+                    ktormDatabase.from(Files).select().where { Files.filePath eq (getRelationPath(entry.target, file)) }
+                        .map {
+                            it[Files.status]
+                        }.firstOrNull()
                 // 检查文件状态是否有效
                 if (recordStatus == null) {
                     registerFile(entry, file)
@@ -268,13 +287,11 @@ object UDTDatabase {
                     ologger.info { "SKIPFile: $file" }
                 }
             } else if (file.isDirectory) {
-                val record = ktormDatabase
-                    .from(Dirs)
-                    .select()
-                    .where { Dirs.dirPath eq (getRelationPath(entry.target, file)) }
-                    .map {
-                        it[Dirs.dirPath]
-                    }.firstOrNull()
+                val record =
+                    ktormDatabase.from(Dirs).select().where { Dirs.dirPath eq (getRelationPath(entry.target, file)) }
+                        .map {
+                            it[Dirs.dirPath]
+                        }.firstOrNull()
 
                 if (record == null) {
                     writeDirInfo(entry, file)

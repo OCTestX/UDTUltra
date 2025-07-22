@@ -5,6 +5,8 @@ import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberTrayState
+import io.github.octest.udtultra.logic.UDiskManager
+import io.github.octest.udtultra.repository.database.UDiskEntry
 import io.github.octestx.basic.multiplatform.common.utils.OS
 import io.github.octestx.basic.multiplatform.ui.ui.BasicMUIWrapper
 import moe.tlaster.precompose.PreComposeApp
@@ -36,8 +38,13 @@ fun main() {
         Tray(
             icon = painterResource(Res.drawable.icon),
             menu = {
-                Item("Show", onClick = { windowVisible = true })
-                Separator()
+                if (
+                    UDiskManager.currentUDisks.firstNotNullOfOrNull {
+                        it.type == UDiskEntry.Companion.Type.KEY.value || it.type == UDiskEntry.Companion.Type.MASTER.value
+                    } != null) {
+                    Item("Show", onClick = { windowVisible = true })
+                    Separator()
+                }
                 Item("Exit", onClick = ::exitApplication)
             },
             onAction = {

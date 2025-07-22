@@ -10,6 +10,9 @@ object Entrys : Table<Nothing>("entrys") {
     val name = varchar("name")
     val totalSpace = long("totalSpace")
     val freeSpace = long("freeSpace")
+
+    // common; disable; key; master
+    val type = varchar("type")
 }
 
 object Files : Table<Nothing>("files") {

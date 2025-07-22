@@ -62,17 +62,11 @@ suspend fun usbStorageListener(
         Files.createDirectories(mediaPath)
 
         // 新增：扫描现有挂载点（支持指定ID过滤）
-        if (Files.exists(mediaPath)) {
-            Files.list(mediaPath).use { stream ->
-                stream.filter { Files.isDirectory(it) }
-                    .forEach { path ->
-                        val id = path.fileName.toString()
-                        // 如果initDriversId为空 或 ID在指定集合中，则触发事件
-                        if (initDriversId.isEmpty() || id in initDriversId) {
-                            detectedDevices[id] = path.toFile()
-                            callback(UsbEvent.INSERT, id, path.toFile())
-                        }
-                    }
+        listInLinuxUDrivers().forEach { id, file ->
+            // 如果initDriversId为空 或 ID在指定集合中，则触发事件
+            if (id in initDriversId) {
+                detectedDevices[id] = file
+                callback(UsbEvent.INSERT, id, file)
             }
         }
 
@@ -118,7 +112,6 @@ suspend fun usbStorageListener(
 private fun updateWindowsUDrives(detectedDevices: MutableMap<String, File>) {
     // 获取当前连接的USB存储设备
     val result = "wmic path Win32_Volume where DriveType=2 get DeviceID,DriveLetter".executeCommand()
-    val currentDevices = mutableMapOf<String, File>()
 
     // 解析设备ID和盘符
     result.lines()
@@ -130,10 +123,32 @@ private fun updateWindowsUDrives(detectedDevices: MutableMap<String, File>) {
                 val id = idLine.substringAfter("=").trim()
                 val drive = driveLine.substringAfter("=").trim()
                 if (drive.isNotBlank()) {
-                    currentDevices[id] = File("$drive\\")
+                    detectedDevices[id] = File("$drive\\")
                 }
             }
         }
+}
+
+fun listInWindowsUDrivers(): Map<String, File> {
+    val detectedDevices = mutableMapOf<String, File>()
+    updateWindowsUDrives(detectedDevices)
+    return detectedDevices
+}
+
+fun listInLinuxUDrivers(): Map<String, File> {
+    // 新增：扫描现有挂载点（支持指定ID过滤）
+    val mediaPath = Paths.get("/media/${System.getProperty("user.name")}")
+    val map = mutableMapOf<String, File>()
+    if (Files.exists(mediaPath)) {
+        Files.list(mediaPath).use { stream ->
+            stream.filter { Files.isDirectory(it) }
+                .forEach { path ->
+                    val id = path.fileName.toString()
+                    map[id] = path.toFile()
+                }
+        }
+    }
+    return map
 }
 
 // 扩展函数：执行命令并返回结果

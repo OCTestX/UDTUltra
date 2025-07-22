@@ -2,17 +2,14 @@ package io.github.octest.udtultra
 
 import io.github.octest.udtultra.logic.WorkStacker
 import io.github.octest.udtultra.repository.UDTDatabase
-import io.github.octest.udtultra.repository.database.DirTreeEntry
-import io.github.octestx.basic.multiplatform.common.utils.gb
-import io.github.octestx.basic.multiplatform.common.utils.mb
+import io.github.octest.udtultra.repository.database.UDiskEntry
 import io.klogging.noCoLogger
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.File
 
 class DirRecorder(
-    private val entry: DirTreeEntry
+    private val entry: UDiskEntry
 ) {
     private val ologger = noCoLogger("DirRecorder-${entry.id}")
     suspend fun start() {
@@ -66,17 +63,18 @@ class DirRecorder(
     }
 }
 
-private fun main() {
-    val recorder = DirRecorder(
-        entry = DirTreeEntry(
-            name = "test",
-            target = File("/home/octest/Desktop/UDTUltra/test"),
-            id = "testId",
-            totalSpace = 2.gb,
-            freeSpace = 323.mb,
-        )
-    )
-    runBlocking {
-        recorder.start()
-    }
-}
+//private fun main() {
+//    val recorder = DirRecorder(
+//        entry = UDiskEntry(
+//            name = "test",
+//            target = File("/home/octest/Desktop/UDTUltra/test"),
+//            id = "testId",
+//            totalSpace = 2.gb,
+//            freeSpace = 323.mb,
+//
+//        )
+//    )
+//    runBlocking {
+//        recorder.start()
+//    }
+//}

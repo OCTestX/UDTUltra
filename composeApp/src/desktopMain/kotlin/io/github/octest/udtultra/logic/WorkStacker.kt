@@ -31,7 +31,7 @@ import compose.icons.tablericons.X
 import io.github.octest.udtultra.repository.FileTreeManager
 import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octest.udtultra.repository.database.DirRecord
-import io.github.octest.udtultra.repository.database.DirTreeEntry
+import io.github.octest.udtultra.repository.database.UDiskEntry
 import io.klogging.noCoLogger
 import kotlinx.coroutines.*
 import java.io.File
@@ -330,7 +330,7 @@ object Workers {
     }
 
     fun copyDirWorker(
-        entry: DirTreeEntry,
+        entry: UDiskEntry,
         from: DirRecord,
         to: File,
         append: Boolean = false,

@@ -6,8 +6,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octest.udtultra.ui.pages.FileBrowserPageMVIBackend
 import io.github.octest.udtultra.ui.pages.FileBrowserUI
+import io.github.octest.udtultra.ui.pages.UDiskEditorPageMVIBackend
+import io.github.octest.udtultra.ui.pages.UDiskEditorUI
 import io.klogging.noCoLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,13 +38,22 @@ fun App() {
         scene("/fileBrowser") {
             val backend = remember {
                 FileBrowserPageMVIBackend(jumpToUDiskEditor = {
-                    navigator.navigate("/UDiskEditor/$it")
+                    navigator.navigate("/UDiskEditor/${it.id}")
                 })
             }
             FileBrowserUI(backend, backend.CurrentState())
         }
         scene("/UDiskEditor/{UDiskId}") { backStackEntry ->
-            backStackEntry.path<String>("UDiskId")!!
+            val uDiskId = backStackEntry.path<String>("UDiskId")!!
+            val entry = remember {
+                UDTDatabase.getEntrys().find { it.id == uDiskId }!!
+            }
+            val backend = remember {
+                UDiskEditorPageMVIBackend(entry, back = {
+                    navigator.popBackStack()
+                })
+            }
+            UDiskEditorUI(backend, backend.CurrentState())
         }
     }
 }

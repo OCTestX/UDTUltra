@@ -23,14 +23,14 @@ import io.github.octest.udtultra.repository.FileTreeManager
 import io.github.octest.udtultra.repository.SettingRepository
 import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octest.udtultra.repository.database.DirRecord
-import io.github.octest.udtultra.repository.database.DirTreeEntry
 import io.github.octest.udtultra.repository.database.FileRecord
+import io.github.octest.udtultra.repository.database.UDiskEntry
 import io.github.octest.udtultra.ui.DirInfoDialog
 import io.github.octest.udtultra.ui.DirItemUI
 import io.github.octest.udtultra.ui.FileInfoDialog
 import io.github.octest.udtultra.ui.FileItemUI
 import io.github.octest.udtultra.ui.animation.DelayShowAnimationFromTopLeft
-import io.github.octest.udtultra.ui.pages.FileBrowserPageMVIBackend.MainPageEvent.SwitchPath
+import io.github.octest.udtultra.ui.pages.FileBrowserPageMVIBackend.FileBrowserPageEvent.SwitchPath
 import io.github.octestx.basic.multiplatform.common.utils.gb
 import io.github.octestx.basic.multiplatform.common.utils.kb
 import io.github.octestx.basic.multiplatform.common.utils.storage
@@ -115,7 +115,11 @@ fun FileBrowserUI(
                             val isSelected = state.currentEntry?.id == entry.id
                             Card(
                                 onClick = {
-                                    backend.emitIntent(FileBrowserPageMVIBackend.MainPageEvent.SelectedEntry(entry))
+                                    backend.emitIntent(
+                                        FileBrowserPageMVIBackend.FileBrowserPageEvent.SelectedEntry(
+                                            entry
+                                        )
+                                    )
                                 },
                                 Modifier.padding(4.dp),
                                 colors = CardDefaults.cardColors(
@@ -137,7 +141,7 @@ fun FileBrowserUI(
                                     }
                                     IconButton(onClick = {
                                         backend.emitIntent(
-                                            FileBrowserPageMVIBackend.MainPageEvent.JumpToUDiskEditor(
+                                            FileBrowserPageMVIBackend.FileBrowserPageEvent.JumpToUDiskEditor(
                                                 entry
                                             )
                                         )
@@ -160,17 +164,17 @@ fun FileBrowserUI(
             FileInfoDialog(
                 it,
                 cleanSelectedFile = { selectedFile = null },
-                sendFileTo = { file -> backend.emitIntent(FileBrowserPageMVIBackend.MainPageEvent.SendFileTo(file)) },
+                sendFileTo = { file -> backend.emitIntent(FileBrowserPageMVIBackend.FileBrowserPageEvent.SendFileTo(file)) },
                 sendFileToDesktop = { file ->
                     backend.emitIntent(
-                        FileBrowserPageMVIBackend.MainPageEvent.SendFileToDesktop(
+                        FileBrowserPageMVIBackend.FileBrowserPageEvent.SendFileToDesktop(
                             file
                         )
                     )
                 },
                 deleteAndBanFile = { file ->
                     backend.emitIntent(
-                        FileBrowserPageMVIBackend.MainPageEvent.DeleteAndBanFile(
+                        FileBrowserPageMVIBackend.FileBrowserPageEvent.DeleteAndBanFile(
                             file
                         )
                     )
@@ -181,17 +185,17 @@ fun FileBrowserUI(
             DirInfoDialog(
                 it,
                 cleanSelectedDir = { selectedDir = null },
-                sendDirTo = { file -> backend.emitIntent(FileBrowserPageMVIBackend.MainPageEvent.SendDirTo(file)) },
+                sendDirTo = { file -> backend.emitIntent(FileBrowserPageMVIBackend.FileBrowserPageEvent.SendDirTo(file)) },
                 sendDirToDesktop = { file ->
                     backend.emitIntent(
-                        FileBrowserPageMVIBackend.MainPageEvent.SendDirToDesktop(
+                        FileBrowserPageMVIBackend.FileBrowserPageEvent.SendDirToDesktop(
                             file
                         )
                     )
                 },
                 deleteAndBanDir = { file ->
                     backend.emitIntent(
-                        FileBrowserPageMVIBackend.MainPageEvent.DeleteAndBanDir(
+                        FileBrowserPageMVIBackend.FileBrowserPageEvent.DeleteAndBanDir(
                             file
                         )
                     )
@@ -224,13 +228,13 @@ fun FileBrowserUI(
                         Row {
                             AnimatedVisibility(state.canBack) {
                                 IconButton(onClick = {
-                                    backend.emitIntent(FileBrowserPageMVIBackend.MainPageEvent.BackDirectory)
+                                    backend.emitIntent(FileBrowserPageMVIBackend.FileBrowserPageEvent.BackDirectory)
                                 }) {
                                     Icon(TablerIcons.ArrowBack, contentDescription = "返回上一级")
                                 }
                             }
                             IconButton(onClick = {
-                                backend.emitIntent(FileBrowserPageMVIBackend.MainPageEvent.ReloadData)
+                                backend.emitIntent(FileBrowserPageMVIBackend.FileBrowserPageEvent.ReloadData)
                             }) {
                                 Icon(TablerIcons.Loader, contentDescription = "Reload")
                             }
@@ -284,7 +288,7 @@ fun FileBrowserUI(
                                         dir = dir,
                                         click = {
                                             backend.emitIntent(
-                                                FileBrowserPageMVIBackend.MainPageEvent.IntoDirectory(
+                                                FileBrowserPageMVIBackend.FileBrowserPageEvent.IntoDirectory(
                                                     dir.dirName
                                                 )
                                             )
@@ -309,12 +313,12 @@ fun FileBrowserUI(
 }
 
 
-class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: DirTreeEntry) -> Unit) :
-    MVIBackend<FileBrowserPageMVIBackend.FileBrowserPageIntentState, FileBrowserPageMVIBackend.MainPageEvent>() {
+class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: UDiskEntry) -> Unit) :
+    MVIBackend<FileBrowserPageMVIBackend.FileBrowserPageIntentState, FileBrowserPageMVIBackend.FileBrowserPageEvent>() {
     private val ologger = noCoLogger<FileBrowserPageMVIBackend>()
     private var reloadNotify by mutableIntStateOf(0)
-    private val entrys = mutableStateListOf<DirTreeEntry>()
-    private var currentEntry: DirTreeEntry? by mutableStateOf(entrys.firstOrNull())
+    private val entrys = mutableStateListOf<UDiskEntry>()
+    private var currentEntry: UDiskEntry? by mutableStateOf(entrys.firstOrNull())
     private var currentPath: String by mutableStateOf("")
     private val currentFiles = mutableStateListOf<FileRecord>()
     private val currentDirs = mutableStateListOf<DirRecord>()
@@ -323,9 +327,9 @@ class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: DirTreeEn
      * 事件处理器
      * 处理路径切换、进入目录、返回目录等操作
      */
-    override suspend fun processIntent(event: MainPageEvent) {
+    override suspend fun processIntent(event: FileBrowserPageEvent) {
         when (event) {
-            MainPageEvent.ReloadData -> {
+            FileBrowserPageEvent.ReloadData -> {
                 reloadNotify++
             }
 
@@ -338,27 +342,27 @@ class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: DirTreeEn
                 } else t1
             }
 
-            is MainPageEvent.IntoDirectory -> {
+            is FileBrowserPageEvent.IntoDirectory -> {
                 // 进入子目录：拼接新路径
                 processIntent(SwitchPath(currentPath + File.separator + event.dirName))
             }
 
-            is MainPageEvent.BackDirectory -> {
+            is FileBrowserPageEvent.BackDirectory -> {
                 // 返回上一级目录：移除当前路径最后一段
                 processIntent(
                     SwitchPath(currentPath.removeSuffix(currentPath.split(File.separator).last()))
                 )
             }
 
-            is MainPageEvent.SelectedEntry -> {
+            is FileBrowserPageEvent.SelectedEntry -> {
                 // 选择根目录：切换当前目录
                 currentEntry = event.entry
                 currentPath = ""
             }
 
-            is MainPageEvent.DeleteAndBanFile -> TODO()
-            is MainPageEvent.SendFileTo -> TODO()
-            is MainPageEvent.SendFileToDesktop -> {
+            is FileBrowserPageEvent.DeleteAndBanFile -> TODO()
+            is FileBrowserPageEvent.SendFileTo -> TODO()
+            is FileBrowserPageEvent.SendFileToDesktop -> {
                 val entry = currentEntry
                 if (entry != null) {
                     val target = File("/home/octest/Desktop", event.file.fileName)
@@ -381,8 +385,8 @@ class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: DirTreeEn
                 }
             }
 
-            is MainPageEvent.SendDirTo -> TODO()
-            is MainPageEvent.SendDirToDesktop -> {
+            is FileBrowserPageEvent.SendDirTo -> TODO()
+            is FileBrowserPageEvent.SendDirToDesktop -> {
                 val entry = currentEntry
                 if (entry != null) {
                     val target = File("/home/octest/Desktop/TEST1", event.dir.dirName)
@@ -398,8 +402,8 @@ class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: DirTreeEn
                 }
             }
 
-            is MainPageEvent.DeleteAndBanDir -> TODO()
-            is MainPageEvent.JumpToUDiskEditor -> jumpToUDiskEditor(event.entry)
+            is FileBrowserPageEvent.DeleteAndBanDir -> TODO()
+            is FileBrowserPageEvent.JumpToUDiskEditor -> jumpToUDiskEditor(event.entry)
         }
 
     }
@@ -444,8 +448,8 @@ class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: DirTreeEn
      * @param action 事件回调
      */
     data class FileBrowserPageIntentState(
-        val entrys: List<DirTreeEntry>,
-        val currentEntry: DirTreeEntry?,
+        val entrys: List<UDiskEntry>,
+        val currentEntry: UDiskEntry?,
         val currentPath: String,
         val currentFiles: List<FileRecord>,
         val currentDirs: List<DirRecord>,
@@ -456,26 +460,26 @@ class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: DirTreeEn
      * 页面动作密封类
      * 包含路径切换、进入目录、返回目录等操作
      */
-    sealed class MainPageEvent : IntentEvent() {
-        data object ReloadData : MainPageEvent()
-        data class SwitchPath(val path: String) : MainPageEvent()
-        data class IntoDirectory(val dirName: String) : MainPageEvent()
-        data object BackDirectory : MainPageEvent()
-        data class SelectedEntry(val entry: DirTreeEntry) : MainPageEvent()
-        data class SendFileTo(val file: FileRecord) : MainPageEvent()
-        data class SendFileToDesktop(val file: FileRecord) : MainPageEvent()
-        data class DeleteAndBanFile(val file: FileRecord) : MainPageEvent()
-        data class SendDirTo(val dir: DirRecord) : MainPageEvent()
-        data class SendDirToDesktop(val dir: DirRecord) : MainPageEvent()
-        data class DeleteAndBanDir(val dir: DirRecord) : MainPageEvent()
+    sealed class FileBrowserPageEvent : IntentEvent() {
+        data object ReloadData : FileBrowserPageEvent()
+        data class SwitchPath(val path: String) : FileBrowserPageEvent()
+        data class IntoDirectory(val dirName: String) : FileBrowserPageEvent()
+        data object BackDirectory : FileBrowserPageEvent()
+        data class SelectedEntry(val entry: UDiskEntry) : FileBrowserPageEvent()
+        data class SendFileTo(val file: FileRecord) : FileBrowserPageEvent()
+        data class SendFileToDesktop(val file: FileRecord) : FileBrowserPageEvent()
+        data class DeleteAndBanFile(val file: FileRecord) : FileBrowserPageEvent()
+        data class SendDirTo(val dir: DirRecord) : FileBrowserPageEvent()
+        data class SendDirToDesktop(val dir: DirRecord) : FileBrowserPageEvent()
+        data class DeleteAndBanDir(val dir: DirRecord) : FileBrowserPageEvent()
 
-        data class JumpToUDiskEditor(val entry: DirTreeEntry) : MainPageEvent()
+        data class JumpToUDiskEditor(val entry: UDiskEntry) : FileBrowserPageEvent()
     }
 }
 
 // 替换原有Row组件
 @Composable
-fun SpeedSlider() {
+private fun SpeedSlider() {
     val ioscope = remember { CoroutineScope(Dispatchers.IO) }
 
     Column(

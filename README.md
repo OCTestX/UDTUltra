@@ -1,11 +1,13 @@
-This is a Kotlin Multiplatform project targeting Desktop.
+common; disable; key; master
 
-* `/composeApp` is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - `commonMain` is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    `iosMain` would be the right folder for such calls.
+common 是普通u盘，需要复制
 
+disable 是禁止复制的u盘
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
+key 是密钥u盘, 插入u盘后才能进入图形化界面, 插入时会检测是否有数据被复制，并且销毁复制的数据;
+根目录需要有.udtUltraKeyUDisk(并赋予隐藏属性)文件会被自动识别
+
+master 是主u盘，插入u盘后才能进入图形化界面, 并且数据会复制到这个u盘的UDTUltraMaster文件夹中; 插入时会检测是否有数据被复制，并且销毁复制的数据;
+根目录需要有.udtUltraMasterUDisk(并赋予隐藏属性)文件会被自动识别
+
+### 如果有.udtUltraMasterUDisk就不要放置.udtUltraKeyUDisk，因为.udtUltraKeyUDisk的识别优先级更高!
