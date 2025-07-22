@@ -1,10 +1,15 @@
 package io.github.octest.udtultra
 
+import io.github.octestx.basic.multiplatform.common.utils.OS
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 
 object Const {
-    const val appDir = "/home/octest/Desktop/UDTUltra"
+    // TODO
+    val appDir by lazy {
+        if (OS.currentOS == OS.OperatingSystem.LINUX) "/home/octest/Desktop/UDTUltra"
+        else "D:\\UDTUltra"
+    }
     // 经过多少次可以尝试休息
     const val randomSleepCount = 100
     // 次数的摆动数值

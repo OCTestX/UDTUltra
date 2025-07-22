@@ -15,10 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
-import compose.icons.tablericons.ArrowBack
-import compose.icons.tablericons.Loader
-import compose.icons.tablericons.Menu2
-import compose.icons.tablericons.X
+import compose.icons.tablericons.*
 import io.github.octest.udtultra.logic.WorkStacker
 import io.github.octest.udtultra.logic.Workers.copyDirWorker
 import io.github.octest.udtultra.logic.Workers.copyFileWorker
@@ -352,16 +349,23 @@ fun FileBrowserUI(
                                 ),
                                 elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp)
                             ) {
-                                Column(Modifier.padding(6.dp)) {
-                                    Text(
-                                        entry.name,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                    Text(
-                                        "总共${storage(entry.totalSpace)}, 剩余${storage(entry.freeSpace)}",
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
+                                Row {
+                                    Column(Modifier.padding(6.dp)) {
+                                        Text(
+                                            entry.name,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                        Text(
+                                            "总共${storage(entry.totalSpace)}, 剩余${storage(entry.freeSpace)}",
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                    IconButton(onClick = {
+                                        dsaf
+                                    }) {
+                                        Icon(TablerIcons.Edit, contentDescription = null)
+                                    }
                                 }
                             }
                         }
