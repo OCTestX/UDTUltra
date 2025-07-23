@@ -97,14 +97,6 @@ fun FileBrowserUI(
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.padding(8.dp).weight(1f)
                         )
-                        val scope = rememberCoroutineScope() + CoroutineName("FileBrowserUIScope")
-                        IconButton(onClick = {
-                            scope.launch {
-                                drawerState.close()
-                            }
-                        }) {
-                            Icon(TablerIcons.X, contentDescription = null)
-                        }
                     }
                 }
 
@@ -132,7 +124,7 @@ fun FileBrowserUI(
                                 elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp)
                             ) {
                                 Row {
-                                    Column(Modifier.padding(6.dp)) {
+                                    Column(Modifier.padding(6.dp).weight(1f)) {
                                         Text(
                                             entry.name,
                                             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
@@ -671,7 +663,7 @@ private fun SpeedSlider() {
                     SettingRepository.changeCopySpeed(speedInMB)
                 }
             },
-            valueRange = 512.kb.toFloat()..5.gb.toFloat(),
+            valueRange = 512.kb.toFloat()..1.gb.toFloat(),
             colors = SliderDefaults.colors(
                 thumbColor = MaterialTheme.colorScheme.primary,
                 activeTrackColor = MaterialTheme.colorScheme.primaryContainer

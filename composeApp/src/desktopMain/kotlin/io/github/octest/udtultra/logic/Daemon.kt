@@ -26,12 +26,28 @@ object Daemon {
                     scope.launch {
                         delay(10.sec)
 
+                        val entry = UDTDatabase.getEntry(id)
                         val isKeyFile = File(root, ".udtUltraKeyUDisk")
                         val isMasterFile = File(root, ".udtUltraMasterUDisk")
+                        if (entry != null) {
+                            when(entry.type) {
+                                UDiskEntry.Companion.Type.MASTER.value -> {
+                                    isKeyFile.delete()
+                                    if (isMasterFile.exists().not()) {
+                                        isMasterFile.createNewFile()
+                                    }
+                                }
+                                UDiskEntry.Companion.Type.KEY.value -> {
+                                    if (isKeyFile.exists().not()) {
+                                        isKeyFile.createNewFile()
+                                    }
+                                }
+                            }
+                        }
                         val type =
                             if (isKeyFile.exists() && isKeyFile.isFile && isKeyFile.isHidden) UDiskEntry.Companion.Type.KEY
                             else if (isMasterFile.exists() && isMasterFile.isFile && isMasterFile.isHidden) UDiskEntry.Companion.Type.MASTER
-                            else UDiskEntry.Companion.Type.COMMON
+                            else null
 
                         if (SettingRepository.daemonSwitch.value) {
                             DirRecorder(
@@ -41,10 +57,10 @@ object Daemon {
                                     id,
                                     root.totalSpace,
                                     root.freeSpace,
-                                    type.value
+                                    // 如果u盘里没有文件能证明是key或者master，那么就按以前的记录来，如果以前没有记录（新u盘）则使用Common类型
+                                    type?.value?:entry?.type?:UDiskEntry.Companion.Type.COMMON.value
                                 )
-                            )
-                                .start()
+                            ).start()
                         } else {
                             ologger.info { "Daemon is disabled, so skip it" }
                         }

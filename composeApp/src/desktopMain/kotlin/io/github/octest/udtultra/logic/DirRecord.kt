@@ -18,30 +18,34 @@ class DirRecorder(
     suspend fun start() {
         withContext(Dispatchers.IO) {
             UDTDatabase.runInEntry(entry) {
-                WorkStacker.putWork(
-                    WorkStacker.Worker(
-                        WorkStacker.WorkInfo(
-                            "U盘复制中",
-                            WorkStacker.WorkType.CopyFromSource,
-                            WorkStacker.ProgressType.Running
-                        )
-                    ) {
-                        ologger.info { "UDiskRoot: ${entry.target}" }
-                        val banedFiles = UDTDatabase.getBanedFiles(entry)
-                        val banedDirs = UDTDatabase.getBanedDirs(entry)
-                        try {
-                            traverseDirectory(entry.target, entry.target, banedFiles, banedDirs) {
-                                ologger.info { "Traverse: $it" }
-                                setTitle("U盘复制中: $it")
+                // 只有普通u盘才会去复制
+                if (entry.type == UDiskEntry.Companion.Type.COMMON.value) {
+                    WorkStacker.putWork(
+                        WorkStacker.Worker(
+                            WorkStacker.WorkInfo(
+                                "U盘复制中",
+                                WorkStacker.WorkType.CopyFromSource,
+                                WorkStacker.ProgressType.Running
+                            )
+                        ) {
+                            ologger.info { "UDiskRoot: ${entry.target}" }
+                            val banedFiles = UDTDatabase.getBanedFiles(entry)
+                            val banedDirs = UDTDatabase.getBanedDirs(entry)
+                            try {
+                                traverseDirectory(entry.target, entry.target, banedFiles, banedDirs) {
+                                    ologger.info { "Traverse: $it" }
+                                    setTitle("U盘复制中: $it")
+                                }
+                                ologger.info { "DONE!" }
+                            } catch (e: Throwable) {
+                                setTitle("U盘复制失败")
+                                ologger.error(e) { "U盘复制失败" }
+                                throwErrorAndCancel(e)
                             }
-                            ologger.info { "DONE!" }
-                        } catch (e: Throwable) {
-                            setTitle("U盘复制失败")
-                            ologger.error(e) { "U盘复制失败" }
-                            throwErrorAndCancel(e)
-                        }
-                    },
-                )
+                        },
+                    )
+
+                }
             }
         }
     }
