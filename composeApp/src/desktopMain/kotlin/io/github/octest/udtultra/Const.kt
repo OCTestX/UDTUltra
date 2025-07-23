@@ -10,6 +10,9 @@ object Const {
         if (OS.currentOS == OS.OperatingSystem.LINUX) "/home/octest/Desktop/UDTUltra"
         else "D:\\UDTUltra"
     }
+    val desktop by lazy {
+        "/home/octest/Desktop"
+    }
     // 经过多少次可以尝试休息
     const val randomSleepCount = 100
     // 次数的摆动数值

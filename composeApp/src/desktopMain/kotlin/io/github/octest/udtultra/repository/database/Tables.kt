@@ -34,3 +34,18 @@ object Dirs : Table<Nothing>("dirs") {
     val createDate = long("createDate")
     val modifierDate = long("modifierDate")
 }
+
+object BanedFiles : Table<Nothing>("banedFiles") {
+    val entryId = varchar("entryId")
+    val filePath = varchar("filePath").primaryKey()
+    val fileName = varchar("fileName")
+    val parentDir = varchar("parentDir")
+    val size = long("size")
+}
+
+object BanedDirs : Table<Nothing>("banedDirs") {
+    val entryId = varchar("entryId")
+    val dirPath = varchar("dirPath").primaryKey()
+    val dirName = varchar("dirName")
+    val parentDir = varchar("parentDir")
+}

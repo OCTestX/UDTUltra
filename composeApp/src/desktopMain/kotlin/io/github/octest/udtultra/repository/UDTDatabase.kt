@@ -13,7 +13,6 @@ import io.github.octestx.basic.multiplatform.common.utils.RateLimitInputStream
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.klogging.noCoLogger
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.ktorm.database.Database
 import org.ktorm.dsl.*
@@ -31,10 +30,12 @@ object UDTDatabase {
             createTableIfNotExists(Entrys)
             createTableIfNotExists(Files)
             createTableIfNotExists(Dirs)
+            createTableIfNotExists(BanedFiles)
+            createTableIfNotExists(BanedDirs)
         }
     }
 
-    suspend fun lockEntry(entry: UDiskEntry, block: suspend EntryWorker.() -> Unit) {
+    suspend fun runInEntry(entry: UDiskEntry, block: suspend EntryWorker.() -> Unit) {
         if (entry.exist().not()) {
             writeNewEntry(entry)
         }
@@ -43,19 +44,14 @@ object UDTDatabase {
         } else if (entry.type == UDiskEntry.Companion.Type.MASTER.value) {
             changeUDiskType(entry, UDiskEntry.Companion.Type.MASTER)
         }
-        // 实现锁机制，这里简化处理
-        synchronized(entry.id.intern()) {
-            runBlocking {
-                withContext(Dispatchers.IO) {
-                    EntryWorkerImpl(entry).apply {
-                        block()
-                    }
-                }
+        withContext(Dispatchers.IO) {
+            EntryWorkerImpl(entry).apply {
+                block()
             }
         }
     }
 
-    fun writeNewEntry(entry: UDiskEntry) {
+    suspend fun writeNewEntry(entry: UDiskEntry) {
         ktormDatabase.insert(Entrys) {
             set(it.id, entry.id)
             set(it.name, entry.name)
@@ -150,7 +146,7 @@ object UDTDatabase {
     }
 
 
-    fun writeDirInfo(entry: UDiskEntry, dir: File) {
+    suspend fun writeDirInfo(entry: UDiskEntry, dir: File) {
         ktormDatabase.insert(Dirs) {
             set(it.entryId, entry.id)
             set(it.dirPath, getRelationPath(entry.target, dir))
@@ -193,6 +189,60 @@ object UDTDatabase {
         }.first()
     }
 
+    suspend fun fileIsBaned(entryId: String, relationFilePath: String): Boolean {
+        return ktormDatabase.from(BanedFiles).select()
+            .where { (BanedFiles.entryId eq entryId) and (BanedFiles.filePath eq relationFilePath) }.map { it }
+            .firstOrNull() == null
+    }
+
+    suspend fun changeBanedFileStatus(entry: UDiskEntry, relationFilePath: String, baned: Boolean) {
+        if (baned) {
+            if (fileIsBaned(entry.id, relationFilePath)) {
+                val fileRecord = getFile(entry, relationFilePath)
+                if (fileRecord != null) {
+                    ktormDatabase.insert(BanedFiles) {
+                        set(it.entryId, entry.id)
+                        set(it.filePath, relationFilePath)
+                        set(it.fileName, fileRecord.fileName)
+                        set(it.parentDir, fileRecord.parentDir)
+                        set(it.size, fileRecord.size)
+                    }
+                }
+            }
+        } else {
+            ktormDatabase.delete(BanedFiles) {
+                (it.entryId eq entry.id) and (it.filePath.eq(relationFilePath))
+            }
+        }
+        ktormDatabase.delete(Files) {
+            (it.entryId eq entry.id) and (it.filePath.eq(relationFilePath))
+        }
+    }
+
+    suspend fun dirIsBaned(entryId: String, relationDirPath: String): Boolean {
+        return ktormDatabase.from(BanedDirs).select()
+            .where { (BanedDirs.entryId eq entryId) and (BanedDirs.dirPath eq relationDirPath) }.map { it }
+            .firstOrNull() == null
+    }
+
+    suspend fun changeBanedDirStatus(entry: UDiskEntry, relationFilePath: String, baned: Boolean) {
+        val dirRecord = getDir(entry, relationFilePath)
+        if (baned && dirRecord != null) {
+            ktormDatabase.insert(BanedDirs) {
+                set(BanedDirs.entryId, entry.id)
+                set(BanedDirs.dirPath, relationFilePath)
+                set(BanedDirs.dirName, File(relationFilePath).name)
+                set(BanedDirs.parentDir, dirRecord.parentDir)
+            }
+        } else {
+            ktormDatabase.delete(BanedDirs) {
+                (BanedDirs.entryId eq entry.id) and (it.entryId eq entry.id)
+            }
+        }
+        ktormDatabase.delete(Dirs) {
+            (it.entryId eq entry.id) and (it.dirPath.eq(relationFilePath))
+        }
+    }
     fun changeUDiskName(entry: UDiskEntry, name: String) {
         ktormDatabase.update(Entrys) {
             set(it.name, name)
@@ -227,6 +277,23 @@ object UDTDatabase {
         }
     }
 
+    fun getFile(entry: UDiskEntry, relationFilePath: String): FileRecord? {
+        return ktormDatabase.from(Files).select().where {
+            (Files.entryId eq entry.id) and (Files.filePath eq relationFilePath)
+        }.map {
+            FileRecord(
+                entryId = it[Files.entryId] ?: "",
+                relationFilePath = it[Files.filePath] ?: "",
+                fileName = it[Files.fileName] ?: "",
+                parentDir = it[Files.parentDir] ?: "",
+                size = it[Files.size] ?: 0,
+                createDate = it[Files.createDate] ?: 0,
+                modifierDate = it[Files.modifierDate] ?: 0,
+                status = it[Files.status] ?: 0
+            )
+        }.firstOrNull()
+    }
+
     fun getDirs(entry: UDiskEntry, path: String = ""): List<DirRecord> {
         return ktormDatabase.from(Dirs).select().where {
             (Dirs.entryId eq entry.id) and (Dirs.parentDir eq path)
@@ -242,22 +309,37 @@ object UDTDatabase {
         }
     }
 
+    fun getDir(entry: UDiskEntry, relationDirPath: String): DirRecord? {
+        return ktormDatabase.from(Dirs).select().where {
+            (Dirs.entryId eq entry.id) and (Dirs.dirPath eq relationDirPath)
+        }.map {
+            DirRecord(
+                entryId = it[Dirs.entryId] ?: "",
+                relationDirPath = it[Dirs.dirPath] ?: "",
+                dirName = it[Dirs.fileName] ?: "",
+                parentDir = it[Dirs.parentDir] ?: "",
+                createDate = it[Dirs.createDate] ?: 0,
+                modifierDate = it[Dirs.modifierDate] ?: 0,
+            )
+        }.firstOrNull()
+    }
+
     suspend fun deepSeek(
         entry: UDiskEntry,
         path: String,
-        seekFile: suspend (relationPath: String) -> Unit,
-        seekDir: suspend (relationPath: String) -> Unit
+        seekFile: suspend (fileRecord: FileRecord) -> Unit,
+        seekDir: suspend (dirRecord: DirRecord) -> Unit
     ) {
         // 获取当前路径下的文件
         val files = getFiles(entry, path)
         for (file in files) {
-            seekFile(file.relationFilePath)
+            seekFile(file)
         }
 
         // 获取当前路径下的目录并递归遍历
         val dirs = getDirs(entry, path)
         for (dir in dirs) {
-            seekDir(dir.relationDirPath)
+            seekDir(dir)
             // 递归遍历子目录
             deepSeek(entry, dir.relationDirPath, seekFile, seekDir)
         }

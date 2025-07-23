@@ -14,7 +14,7 @@ class DirRecorder(
     private val ologger = noCoLogger("DirRecorder-${entry.id}")
     suspend fun start() {
         withContext(Dispatchers.IO) {
-            UDTDatabase.lockEntry(entry) {
+            UDTDatabase.runInEntry(entry) {
                 WorkStacker.putWork(
                     WorkStacker.Worker(
                         WorkStacker.WorkInfo(

@@ -16,9 +16,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import compose.icons.TablerIcons
 import compose.icons.tablericons.*
+import io.github.octest.udtultra.Const
 import io.github.octest.udtultra.logic.WorkStacker
-import io.github.octest.udtultra.logic.Workers.copyDirWorker
 import io.github.octest.udtultra.logic.Workers.copyFileWorker
+import io.github.octest.udtultra.logic.Workers.copyUDiskDirWorker
 import io.github.octest.udtultra.repository.FileTreeManager
 import io.github.octest.udtultra.repository.SettingRepository
 import io.github.octest.udtultra.repository.UDTDatabase
@@ -35,6 +36,9 @@ import io.github.octestx.basic.multiplatform.common.utils.gb
 import io.github.octestx.basic.multiplatform.common.utils.kb
 import io.github.octestx.basic.multiplatform.common.utils.storage
 import io.github.octestx.basic.multiplatform.ui.ui.utils.MVIBackend
+import io.github.vinceglb.filekit.absolutePath
+import io.github.vinceglb.filekit.dialogs.compose.rememberDirectoryPickerLauncher
+import io.github.vinceglb.filekit.dialogs.compose.rememberFileSaverLauncher
 import io.klogging.noCoLogger
 import kotlinx.coroutines.*
 import org.jetbrains.compose.ui.tooling.preview.Preview
@@ -58,7 +62,7 @@ fun FileBrowserUI(
     // 添加文件详情弹窗状态
     var selectedFile by remember { mutableStateOf<FileRecord?>(null) }
     var selectedDir by remember { mutableStateOf<DirRecord?>(null) }
-    selectedFile != null || selectedDir != null
+    var showSelectedFile by remember { mutableStateOf(false) }
 
     // 添加控制侧滑栏的状态
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -160,47 +164,79 @@ fun FileBrowserUI(
             }
         }
     ) {
-        selectedFile?.let {
-            FileInfoDialog(
-                it,
-                cleanSelectedFile = { selectedFile = null },
-                sendFileTo = { file -> backend.emitIntent(FileBrowserPageMVIBackend.FileBrowserPageEvent.SendFileTo(file)) },
-                sendFileToDesktop = { file ->
+        val pickExportTargetDirectory =
+            rememberDirectoryPickerLauncher(title = "选择导出的文件的存放位置") { directory ->
+                val selectedDirectory = selectedDir
+                val absPath = directory?.absolutePath()
+                if (absPath != null && selectedDirectory != null) {
                     backend.emitIntent(
-                        FileBrowserPageMVIBackend.FileBrowserPageEvent.SendFileToDesktop(
-                            file
-                        )
-                    )
-                },
-                deleteAndBanFile = { file ->
-                    backend.emitIntent(
-                        FileBrowserPageMVIBackend.FileBrowserPageEvent.DeleteAndBanFile(
-                            file
+                        FileBrowserPageMVIBackend.FileBrowserPageEvent.SendDirTo(
+                            selectedDirectory,
+                            File(absPath)
                         )
                     )
                 }
-            )
+            }
+        val saveSingleFile = rememberFileSaverLauncher { directory ->
+            val selectedFile = selectedFile
+            val absPath = directory?.absolutePath()
+            if (absPath != null && selectedFile != null) {
+                backend.emitIntent(
+                    FileBrowserPageMVIBackend.FileBrowserPageEvent.SendFileTo(
+                        selectedFile,
+                        File(absPath)
+                    )
+                )
+            }
+        }
+        selectedFile?.let {
+            if (showSelectedFile) {
+                FileInfoDialog(
+                    it,
+                    cleanSelectedFile = { showSelectedFile = false },
+                    sendFileTo = { file ->
+                        val tmpFile = File(file.relationFilePath)
+                        saveSingleFile.launch(tmpFile.nameWithoutExtension, tmpFile.extension)
+                    },
+                    sendFileToDesktop = { file ->
+                        backend.emitIntent(
+                            FileBrowserPageMVIBackend.FileBrowserPageEvent.SendFileToDesktop(
+                                file
+                            )
+                        )
+                    },
+                    deleteAndBanFile = { file ->
+                        backend.emitIntent(
+                            FileBrowserPageMVIBackend.FileBrowserPageEvent.DeleteAndBanFile(
+                                file
+                            )
+                        )
+                    }
+                )
+            }
         }
         selectedDir?.let {
-            DirInfoDialog(
-                it,
-                cleanSelectedDir = { selectedDir = null },
-                sendDirTo = { file -> backend.emitIntent(FileBrowserPageMVIBackend.FileBrowserPageEvent.SendDirTo(file)) },
-                sendDirToDesktop = { file ->
-                    backend.emitIntent(
-                        FileBrowserPageMVIBackend.FileBrowserPageEvent.SendDirToDesktop(
-                            file
+            if (showSelectedFile) {
+                DirInfoDialog(
+                    it,
+                    cleanSelectedDir = { showSelectedFile = false },
+                    sendDirTo = { file -> pickExportTargetDirectory.launch() },
+                    sendDirToDesktop = { file ->
+                        backend.emitIntent(
+                            FileBrowserPageMVIBackend.FileBrowserPageEvent.SendDirToDesktop(
+                                file
+                            )
                         )
-                    )
-                },
-                deleteAndBanDir = { file ->
-                    backend.emitIntent(
-                        FileBrowserPageMVIBackend.FileBrowserPageEvent.DeleteAndBanDir(
-                            file
+                    },
+                    deleteAndBanDir = { file ->
+                        backend.emitIntent(
+                            FileBrowserPageMVIBackend.FileBrowserPageEvent.DeleteAndBanDir(
+                                file
+                            )
                         )
-                    )
-                }
-            )
+                    }
+                )
+            }
         }
 
         Scaffold(
@@ -260,42 +296,65 @@ fun FileBrowserUI(
                     // 文件/目录列表 - 手动创建滚动条
                     val mainListState = rememberLazyListState()
                     Box(Modifier.weight(1f)) {
-                        LazyColumn(
-                            state = mainListState,
-                            modifier = Modifier
-                                .padding(8.dp)
-                                .fillMaxSize()
-                        ) {
-                            items(
-                                items = state.currentFiles,
-                                key = { it.relationFilePath }
-                            ) { file ->
-                                DelayShowAnimationFromTopLeft(
-                                    modifier = Modifier.animateItem()
-                                ) {
-                                    // 修改文件点击事件：显示详情弹窗
-                                    FileItemUI(file = file) {
-                                        selectedFile = file
+                        if ((state.currentFiles.size + state.currentDirs.size) > 0) {
+                            LazyColumn(
+                                state = mainListState,
+                                modifier = Modifier
+                                    .padding(8.dp)
+                                    .fillMaxSize()
+                            ) {
+                                items(
+                                    items = state.currentFiles,
+                                    key = { it.relationFilePath }
+                                ) { file ->
+                                    DelayShowAnimationFromTopLeft(
+                                        modifier = Modifier.animateItem()
+                                    ) {
+                                        // 修改文件点击事件：显示详情弹窗
+                                        FileItemUI(file = file) {
+                                            selectedDir = null
+                                            selectedFile = file
+                                            showSelectedFile = true
+                                        }
+                                    }
+                                }
+                                items(
+                                    items = state.currentDirs,
+                                    key = { it.relationDirPath }
+                                ) { dir ->
+                                    DelayShowAnimationFromTopLeft(modifier = Modifier.animateItem()) {
+                                        DirItemUI(
+                                            dir = dir,
+                                            click = {
+                                                backend.emitIntent(
+                                                    FileBrowserPageMVIBackend.FileBrowserPageEvent.IntoDirectory(
+                                                        dir.dirName
+                                                    )
+                                                )
+                                            },
+                                            clickInfo = {
+                                                selectedFile = null
+                                                selectedDir = dir
+                                                showSelectedFile = true
+                                            }
+                                        )
                                     }
                                 }
                             }
-                            items(
-                                items = state.currentDirs,
-                                key = { it.relationDirPath }
-                            ) { dir ->
-                                DelayShowAnimationFromTopLeft(modifier = Modifier.animateItem()) {
-                                    DirItemUI(
-                                        dir = dir,
-                                        click = {
-                                            backend.emitIntent(
-                                                FileBrowserPageMVIBackend.FileBrowserPageEvent.IntoDirectory(
-                                                    dir.dirName
-                                                )
-                                            )
-                                        },
-                                        clickInfo = {
-                                            selectedDir = dir
-                                        }
+                        } else {
+                            Box(Modifier.fillMaxSize()) {
+                                Column(modifier = Modifier.align(Alignment.Center)) {
+                                    Text(
+                                        text = "没有文件",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        modifier = Modifier.padding(8.dp),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Icon(
+                                        TablerIcons.FileOff,
+                                        contentDescription = "没有文件",
+                                        tint = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.size(64.dp).align(Alignment.CenterHorizontally)
                                     )
                                 }
                             }
@@ -360,12 +419,63 @@ class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: UDiskEntr
                 currentPath = ""
             }
 
-            is FileBrowserPageEvent.DeleteAndBanFile -> TODO()
-            is FileBrowserPageEvent.SendFileTo -> TODO()
+            is FileBrowserPageEvent.DeleteAndBanFile -> {
+                val entry = currentEntry
+                if (entry != null) {
+                    val source = FileTreeManager.getExitsFile(entry, event.file.relationFilePath)
+                    source.onSuccess { source ->
+                        val ioscope = CoroutineScope(Dispatchers.IO)
+                        ioscope.launch {
+                            WorkStacker.putWork(
+                                WorkStacker.Worker(
+                                    WorkStacker.WorkInfo(
+                                        title = "",
+                                        type = WorkStacker.WorkType.Delete,
+                                        progressType = WorkStacker.ProgressType.Running
+                                    ), work = {
+                                        source.delete()
+                                        UDTDatabase.changeBanedFileStatus(entry, event.file.relationFilePath, true)
+                                        ologger.info { "文件已封禁： $source" }
+                                        emitIntent(FileBrowserPageEvent.ReloadData)
+                                    }
+                                )
+                            )
+                        }
+                    }
+                    source.onFailure {
+//                            toast.applyShow(ToastModel("复制失败",  type = ToastModel.Type.Error))
+                        ologger.error { "文件已封禁(${source.exceptionOrNull()})" }
+                    }
+                }
+            }
+
+            is FileBrowserPageEvent.SendFileTo -> {
+                val target = event.targetFile
+                ologger.info { "sendFileTo: ${target.absolutePath}" }
+                val entry = currentEntry
+                if (entry != null) {
+                    if (target.exists()) {
+                        target.delete()
+                    }
+                    val source = FileTreeManager.getExitsFile(entry, event.file.relationFilePath)
+                    source.onSuccess { source ->
+                        val ioscope = CoroutineScope(Dispatchers.IO)
+                        ioscope.launch {
+                            WorkStacker.putWork(copyFileWorker(source, target, append = true) {
+                                ologger.info { "复制完成" }
+                            })
+                        }
+                    }
+                    source.onFailure {
+//                            toast.applyShow(ToastModel("复制失败",  type = ToastModel.Type.Error))
+                        ologger.error(it) { "复制失败" }
+                    }
+                }
+            }
             is FileBrowserPageEvent.SendFileToDesktop -> {
                 val entry = currentEntry
                 if (entry != null) {
-                    val target = File("/home/octest/Desktop", event.file.fileName)
+                    val target = File(Const.desktop, event.file.fileName)
                     if (target.exists()) {
                         target.delete()
                     }
@@ -385,24 +495,84 @@ class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: UDiskEntr
                 }
             }
 
-            is FileBrowserPageEvent.SendDirTo -> TODO()
-            is FileBrowserPageEvent.SendDirToDesktop -> {
+            is FileBrowserPageEvent.SendDirTo -> {
                 val entry = currentEntry
                 if (entry != null) {
-                    val target = File("/home/octest/Desktop/TEST1", event.dir.dirName)
+                    val target = File(event.targetDirectory, event.dir.dirName)
                     if (target.exists()) {
                         target.delete()
                     }
                     val ioscope = CoroutineScope(Dispatchers.IO)
                     ioscope.launch {
-                        WorkStacker.putWork(copyDirWorker(entry, event.dir, target) {
+                        WorkStacker.putWork(copyUDiskDirWorker(entry, event.dir, target) {
+                            ologger.info { "文件夹复制完成" }
+                        })
+                    }
+                }
+            }
+            is FileBrowserPageEvent.SendDirToDesktop -> {
+                val entry = currentEntry
+                if (entry != null) {
+                    val target = File(Const.desktop, event.dir.dirName)
+                    if (target.exists()) {
+                        target.delete()
+                    }
+                    val ioscope = CoroutineScope(Dispatchers.IO)
+                    ioscope.launch {
+                        WorkStacker.putWork(copyUDiskDirWorker(entry, event.dir, target) {
                             ologger.info { "文件夹复制完成" }
                         })
                     }
                 }
             }
 
-            is FileBrowserPageEvent.DeleteAndBanDir -> TODO()
+            is FileBrowserPageEvent.DeleteAndBanDir -> {
+                val entry = currentEntry
+                if (entry != null) {
+                    UDTDatabase.deepSeek(entry, event.dir.relationDirPath, seekDir = { dirRecord ->
+                        val ioscope = CoroutineScope(Dispatchers.IO)
+                        ioscope.launch {
+                            WorkStacker.putWork(
+                                WorkStacker.Worker(
+                                    WorkStacker.WorkInfo(
+                                        title = "文件夹封禁...: ${dirRecord.relationDirPath}",
+                                        type = WorkStacker.WorkType.Delete,
+                                        progressType = WorkStacker.ProgressType.Running
+                                    ), work = {
+                                        UDTDatabase.changeBanedDirStatus(entry, dirRecord.relationDirPath, true)
+                                    }
+                                )
+                            )
+                        }
+                    }, seekFile = { fileRecord ->
+                        val source = FileTreeManager.getExitsFile(entry, fileRecord.relationFilePath)
+                        val ioscope = CoroutineScope(Dispatchers.IO)
+                        ioscope.launch {
+                            WorkStacker.putWork(
+                                WorkStacker.Worker(
+                                    WorkStacker.WorkInfo(
+                                        title = "文件封禁...: ${fileRecord.relationFilePath}",
+                                        type = WorkStacker.WorkType.Delete,
+                                        progressType = WorkStacker.ProgressType.Running
+                                    ), work = {
+                                        source.onSuccess { source ->
+                                            source.delete()
+                                        }
+                                        source.onFailure {
+                                            //                            toast.applyShow(ToastModel("复制失败",  type = ToastModel.Type.Error))
+                                            // 要删除的文件未找到，可能已经被删除
+                                        }
+                                        UDTDatabase.changeBanedFileStatus(entry, fileRecord.relationFilePath, true)
+                                        ologger.info { "文件夹封禁： $source" }
+                                    }
+                                )
+                            )
+                        }
+                    })
+                    UDTDatabase.changeBanedDirStatus(entry, event.dir.relationDirPath, true)
+                    emitIntent(FileBrowserPageEvent.ReloadData)
+                }
+            }
             is FileBrowserPageEvent.JumpToUDiskEditor -> jumpToUDiskEditor(event.entry)
         }
 
@@ -466,10 +636,10 @@ class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: UDiskEntr
         data class IntoDirectory(val dirName: String) : FileBrowserPageEvent()
         data object BackDirectory : FileBrowserPageEvent()
         data class SelectedEntry(val entry: UDiskEntry) : FileBrowserPageEvent()
-        data class SendFileTo(val file: FileRecord) : FileBrowserPageEvent()
+        data class SendFileTo(val file: FileRecord, val targetFile: File) : FileBrowserPageEvent()
         data class SendFileToDesktop(val file: FileRecord) : FileBrowserPageEvent()
         data class DeleteAndBanFile(val file: FileRecord) : FileBrowserPageEvent()
-        data class SendDirTo(val dir: DirRecord) : FileBrowserPageEvent()
+        data class SendDirTo(val dir: DirRecord, val targetDirectory: File) : FileBrowserPageEvent()
         data class SendDirToDesktop(val dir: DirRecord) : FileBrowserPageEvent()
         data class DeleteAndBanDir(val dir: DirRecord) : FileBrowserPageEvent()
 

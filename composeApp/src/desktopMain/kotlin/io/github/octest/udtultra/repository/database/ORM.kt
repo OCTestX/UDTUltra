@@ -44,3 +44,18 @@ data class UDiskEntry(
         }
     }
 }
+
+data class BanedFileRecord(
+    val entryId: String,
+    val filePath: String,
+    val fileName: String,
+    val parentDir: String,
+    val size: Long,
+)
+
+data class BanedDirRecord(
+    val entryId: String,
+    val dirPath: String,
+    val dirName: String,
+    val parentDir: String,
+)

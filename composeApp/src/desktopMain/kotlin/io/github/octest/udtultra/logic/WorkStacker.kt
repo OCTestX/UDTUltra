@@ -31,6 +31,7 @@ import compose.icons.tablericons.X
 import io.github.octest.udtultra.repository.FileTreeManager
 import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octest.udtultra.repository.database.DirRecord
+import io.github.octest.udtultra.repository.database.FileRecord
 import io.github.octest.udtultra.repository.database.UDiskEntry
 import io.klogging.noCoLogger
 import kotlinx.coroutines.*
@@ -307,7 +308,6 @@ object Workers {
                         FileOutputStream(to, append).use { outputStream ->
                             while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                                 outputStream.write(buffer, 0, bytesRead)
-                                //TODO
                                 totalRead += bytesRead
 
                                 if (totalRead - lastUpdateBytes >= updateInterval) {
@@ -329,7 +329,7 @@ object Workers {
         )
     }
 
-    fun copyDirWorker(
+    fun copyUDiskDirWorker(
         entry: UDiskEntry,
         from: DirRecord,
         to: File,
@@ -344,13 +344,13 @@ object Workers {
             ),
             work = {
                 try {
-                    val fileRelations = mutableListOf<String>()
+                    val fileRecords = mutableListOf<FileRecord>()
                     setTitle("正在复制文件夹从${from.relationDirPath}到${to.absolutePath}(正在统计中)")
                     ologger.info { "正在复制文件夹从${from.relationDirPath}到${to.absolutePath}(正在统计中)" }
                     var count = 0
                     var doneCount = 0
                     UDTDatabase.deepSeek(entry, from.relationDirPath, seekFile = {
-                        fileRelations.add(it)
+                        fileRecords.add(it)
                         count++
                         setTitle("正在复制文件夹从${from.relationDirPath}到${to.absolutePath}(正在统计中($count): $it)")
                         ologger.info { "正在复制文件夹从${from.relationDirPath}到${to.absolutePath}(正在统计中($count): $it)" }
@@ -359,9 +359,9 @@ object Workers {
                         ologger.info { "正在复制文件夹从${from.relationDirPath}到${to.absolutePath}(创建文件夹中: $it)" }
                     })
                     setProgressType(WorkStacker.ProgressType.HasProgress)
-                    for (fileRelation in fileRelations) {
-                        val source = FileTreeManager.getExitsFile(entry, fileRelation).getOrThrow()
-                        val target = File(to, fileRelation.removePrefix(from.relationDirPath))
+                    for (fileRecord in fileRecords) {
+                        val source = FileTreeManager.getExitsFile(entry, fileRecord.relationFilePath).getOrThrow()
+                        val target = File(to, fileRecord.relationFilePath.removePrefix(from.relationDirPath))
                         WorkStacker.putWork(copyFileWorker(source, target, append = false) {
                             if (it == null) {
                                 doneCount++
