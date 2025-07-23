@@ -1,6 +1,5 @@
 package io.github.octest.udtultra.logic
 
-import io.github.octest.udtultra.DirRecorder
 import io.github.octest.udtultra.repository.SettingRepository
 import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octest.udtultra.repository.database.UDiskEntry
@@ -35,7 +34,16 @@ object Daemon {
                             else UDiskEntry.Companion.Type.COMMON
 
                         if (SettingRepository.daemonSwitch.value) {
-                            DirRecorder(UDiskEntry("NAME_$id", root, id, root.totalSpace, root.freeSpace, type.value))
+                            DirRecorder(
+                                UDiskEntry(
+                                    UDiskManager.getUDiskName(id, root),
+                                    root,
+                                    id,
+                                    root.totalSpace,
+                                    root.freeSpace,
+                                    type.value
+                                )
+                            )
                                 .start()
                         } else {
                             ologger.info { "Daemon is disabled, so skip it" }

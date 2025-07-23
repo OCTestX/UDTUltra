@@ -62,7 +62,7 @@ object UDTDatabase {
     }
 
     interface EntryWorker {
-        suspend fun seekFile(file: File)
+        suspend fun saveFile(file: File)
     }
 
     suspend fun registerFile(entry: UDiskEntry, file: File) {
@@ -174,7 +174,7 @@ object UDTDatabase {
         }
     }
 
-    fun getEntry(id: String): UDiskEntry {
+    fun getEntry(id: String): UDiskEntry? {
         return ktormDatabase.from(Entrys).select().where {
             Entrys.id.eq(id)
         }.map {
@@ -186,7 +186,7 @@ object UDTDatabase {
                 freeSpace = it[Entrys.freeSpace] ?: 0,
                 type = it[Entrys.type] ?: "Common"
             )
-        }.first()
+        }.firstOrNull()
     }
 
     suspend fun fileIsBaned(entryId: String, relationFilePath: String): Boolean {
@@ -277,6 +277,33 @@ object UDTDatabase {
         }
     }
 
+    fun getBanedFiles(entry: UDiskEntry): List<BanedFileRecord> {
+        return ktormDatabase.from(BanedFiles).select().where {
+            (BanedFiles.entryId eq entry.id)
+        }.map {
+            BanedFileRecord(
+                entryId = it[BanedFiles.entryId] ?: "",
+                filePath = it[BanedFiles.filePath] ?: "",
+                fileName = it[BanedFiles.fileName] ?: "",
+                parentDir = it[BanedFiles.parentDir] ?: "",
+                size = it[BanedFiles.size] ?: 0
+            )
+        }
+    }
+
+    fun getBanedDirs(entry: UDiskEntry): List<BanedDirRecord> {
+        return ktormDatabase.from(BanedDirs).select().where {
+            (BanedDirs.entryId eq entry.id)
+        }.map {
+            BanedDirRecord(
+                entryId = it[BanedDirs.entryId] ?: "",
+                dirPath = it[BanedDirs.dirPath] ?: "",
+                dirName = it[BanedDirs.dirName] ?: "",
+                parentDir = it[BanedDirs.parentDir] ?: ""
+            )
+        }
+    }
+
     fun getFile(entry: UDiskEntry, relationFilePath: String): FileRecord? {
         return ktormDatabase.from(Files).select().where {
             (Files.entryId eq entry.id) and (Files.filePath eq relationFilePath)
@@ -352,7 +379,7 @@ object UDTDatabase {
     class EntryWorkerImpl(
         private val entry: UDiskEntry
     ) : EntryWorker {
-        override suspend fun seekFile(file: File) {
+        override suspend fun saveFile(file: File) {
             if (file.isFile) {
                 val recordStatus =
                     ktormDatabase.from(Files).select().where { Files.filePath eq (getRelationPath(entry.target, file)) }

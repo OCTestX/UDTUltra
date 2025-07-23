@@ -563,7 +563,7 @@ class FileBrowserPageMVIBackend(private val jumpToUDiskEditor: (entry: UDiskEntr
                                             // 要删除的文件未找到，可能已经被删除
                                         }
                                         UDTDatabase.changeBanedFileStatus(entry, fileRecord.relationFilePath, true)
-                                        ologger.info { "文件夹封禁： $source" }
+                                        ologger.info { "文件封禁： ${fileRecord.relationFilePath}" }
                                     }
                                 )
                             )
