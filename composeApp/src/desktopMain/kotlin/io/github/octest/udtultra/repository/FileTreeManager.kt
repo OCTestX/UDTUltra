@@ -6,7 +6,9 @@ import java.io.File
 import java.math.BigInteger
 
 object FileTreeManager {
-    val storageDir = File(Const.appDir, "storage")
+    val storageDir = File(Const.appDir, "storage").apply {
+        mkdirs()
+    }
     fun linkFile(entry: UDiskEntry, paths: List<String>): File {
         var file = File(storageDir, entry.id)
         for (path in paths) {

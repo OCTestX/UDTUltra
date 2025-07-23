@@ -11,3 +11,6 @@ master 是主u盘，插入u盘后才能进入图形化界面, 并且数据会复
 根目录需要有.udtUltraMasterUDisk(并赋予隐藏属性)文件会被自动识别
 
 ### 如果有.udtUltraMasterUDisk就不要放置.udtUltraKeyUDisk，因为.udtUltraKeyUDisk的识别优先级更高!
+
+./gradlew desktopJar
+conveyor make site

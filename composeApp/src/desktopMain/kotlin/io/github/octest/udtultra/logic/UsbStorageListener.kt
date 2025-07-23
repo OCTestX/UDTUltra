@@ -110,23 +110,32 @@ suspend fun usbStorageListener(
 }
 
 private fun updateWindowsUDrives(detectedDevices: MutableMap<String, File>) {
-    // 获取当前连接的USB存储设备
-    val result = "wmic path Win32_Volume where DriveType=2 get DeviceID,DriveLetter".executeCommand()
+    val command = "wmic path Win32_Volume where DriveType=2 get DeviceID,DriveLetter /format:csv"
+    val result = command.executeCommand()
 
-    // 解析设备ID和盘符
-    result.lines()
-        .filter { it.contains("DeviceID") || it.contains("DriveLetter") }
-        .chunked(2) { chunk ->
-            val idLine = chunk.find { it.startsWith("DeviceID") }
-            val driveLine = chunk.find { it.startsWith("DriveLetter") }
-            if (idLine != null && driveLine != null) {
-                val id = idLine.substringAfter("=").trim()
-                val drive = driveLine.substringAfter("=").trim()
-                if (drive.isNotBlank()) {
-                    detectedDevices[id] = File("$drive\\")
+    result.trim().lines().drop(1) // 跳过CSV标题行
+        .filter { it.isNotBlank() } // 过滤空行
+        .forEach { line ->
+            val parts = line.split(',', limit = 3)
+            if (parts.size >= 3) {
+                val rawId = parts[1].trim().removeSurrounding("\"")
+                // 提取GUID部分
+                val guid = extractVolumeGUID(rawId)!!
+                val drive = parts[2].trim().removeSurrounding("\"")
+
+                // 验证盘符格式（如"D:"）
+                if (drive.isNotBlank() && drive.matches(Regex("[A-Z]:"))) {
+                    detectedDevices[guid] = File("$drive\\")
                 }
             }
         }
+}
+
+// 从原始设备ID中提取GUID
+private fun extractVolumeGUID(rawId: String): String? {
+    val pattern = """Volume\{([0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})\}""".toRegex()
+    val matchResult = pattern.find(rawId)
+    return matchResult?.groupValues?.get(1)
 }
 
 fun listInWindowsUDrivers(): Map<String, File> {

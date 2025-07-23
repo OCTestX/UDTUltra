@@ -8,7 +8,7 @@ object Const {
     // TODO
     val appDir by lazy {
         if (OS.currentOS == OS.OperatingSystem.LINUX) "/home/octest/Desktop/UDTUltra"
-        else "D:\\UDTUltra"
+        else "D:/UDTUltra"
     }
     val desktop by lazy {
         when (OS.currentOS) {

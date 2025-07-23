@@ -96,6 +96,7 @@ object UDTDatabase {
                         ologger.info { "SavingFile: $file" }
                         val totalSize = file.length()
                         val targetFile = FileTreeManager.linkFile(entry, getFilePathHex16(entry.target, file))
+                        ologger.info { "TARGET: $targetFile" }
                         targetFile.createNewFile()
                         var bytesTransferred = targetFile.length() // 初始已传输字节数（断点续传）
 
