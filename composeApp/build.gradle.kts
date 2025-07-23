@@ -5,7 +5,12 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeHotReload)
+    id("dev.hydraulic.conveyor") version "1.12"
 }
+
+group = "io.github.octestx.udtultra"
+version = "0.0.1"
+
 
 kotlin {
     jvm("desktop")

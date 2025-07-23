@@ -11,7 +11,15 @@ object Const {
         else "D:\\UDTUltra"
     }
     val desktop by lazy {
-        "/home/octest/Desktop"
+        when (OS.currentOS) {
+            OS.OperatingSystem.LINUX -> "/home/octest/Desktop"
+            OS.OperatingSystem.WIN -> {
+                val userHome = System.getProperty("user.home")
+                "$userHome\\Desktop"
+            }
+
+            else -> throw Exception("Not supported OS")
+        }
     }
     // 经过多少次可以尝试休息
     const val randomSleepCount = 100

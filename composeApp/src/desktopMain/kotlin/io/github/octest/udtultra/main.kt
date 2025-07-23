@@ -9,10 +9,10 @@ import io.github.octest.udtultra.logic.UDiskManager
 import io.github.octest.udtultra.repository.database.UDiskEntry
 import io.github.octestx.basic.multiplatform.common.utils.OS
 import io.github.octestx.basic.multiplatform.ui.ui.BasicMUIWrapper
+import io.github.octestx.udtultra.composeapp.generated.resources.Res
+import io.github.octestx.udtultra.composeapp.generated.resources.icon
 import moe.tlaster.precompose.PreComposeApp
 import org.jetbrains.compose.resources.painterResource
-import udtultra.composeapp.generated.resources.Res
-import udtultra.composeapp.generated.resources.icon
 
 fun main() {
     application {

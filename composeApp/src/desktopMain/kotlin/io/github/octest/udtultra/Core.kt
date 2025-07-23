@@ -38,7 +38,7 @@ object Core {
         startKoin {
             modules(
                 BasicMultiplatformConfigModule().apply {
-                    configInnerAppDir(File("/home/octest/Desktop/UDTUltra/"))
+                    configInnerAppDir(File(Const.appDir))
                 }.asModule()
             )
         }
