@@ -35,7 +35,9 @@ object Const {
     // 内部状态
     private var ioCount = 0
     private val random = Random.Default
-    suspend fun seekPoint() {
+
+    // 防止老师觉得u盘特别卡
+    suspend fun seekPointDelay() {
         ioCount++
         // 计算当前休眠阈值（在 randomSleepCount ± shake 范围内）
         val currentThreshold = maxOf(1, randomSleepCount + random.nextInt(2 * shake + 1) - shake)

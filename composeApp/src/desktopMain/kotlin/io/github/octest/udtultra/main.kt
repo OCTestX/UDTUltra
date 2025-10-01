@@ -50,7 +50,7 @@ fun main() {
             onAction = {
                 windowVisible = windowVisible.not()
             },
-            tooltip = "KRecall",
+            tooltip = "UDTUltra",
             state = trayState
         )
         LaunchedEffect(Unit) {

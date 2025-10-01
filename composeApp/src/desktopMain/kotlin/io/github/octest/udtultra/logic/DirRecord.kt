@@ -11,10 +11,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
+/**
+ * 用于记录并处理 U 盘目录结构的类。
+ *
+ * @param entry 表示当前操作的 U 盘条目信息。
+ */
 class DirRecorder(
     private val entry: UDiskEntry
 ) {
     private val ologger = noCoLogger("DirRecorder-${entry.id}")
+
+    /**
+     * 启动目录遍历与文件保存流程。
+     * 此方法将在 IO 调度器中执行，并根据 entry 类型判断是否进行实际复制工作。
+     */
     suspend fun start() {
         withContext(Dispatchers.IO) {
             UDTDatabase.runInEntry(entry) {
@@ -31,6 +41,8 @@ class DirRecorder(
                             ologger.info { "UDiskRoot: ${entry.target}" }
                             val banedFiles = UDTDatabase.getBanedFiles(entry)
                             val banedDirs = UDTDatabase.getBanedDirs(entry)
+
+                            // 开始递归遍历目标目录
                             try {
                                 traverseDirectory(entry.target, entry.target, banedFiles, banedDirs) {
                                     ologger.info { "Traverse: $it" }
@@ -44,12 +56,21 @@ class DirRecorder(
                             }
                         },
                     )
-
                 }
             }
         }
     }
 
+    /**
+     * 递归遍历指定目录下的所有子项（包括文件和目录）。
+     * 对于不在黑名单中的项目，将调用 [throughFile] 回调并将其保存到数据库。
+     *
+     * @param root 根路径，用于计算相对路径。
+     * @param file 当前正在处理的文件或目录。
+     * @param banedFiles 已被禁止的文件列表。
+     * @param banedDirs 已被禁止的目录列表。
+     * @param throughFile 每遇到一个有效文件/目录时触发的回调函数。
+     */
     private suspend fun UDTDatabase.EntryWorker.traverseDirectory(
         root: File,
         file: File,
@@ -74,13 +95,17 @@ class DirRecorder(
                         child
                     )
                 }
+
+                // 判断该文件或目录是否在黑名单中
                 if (
                     (child.isFile && tryToGetBanedFile == null) ||
                     (child.isDirectory && tryToGetBanedDir == null)
                 ) {
                     throughFile(child)
                     saveFile(child)
-                    Const.seekPoint()
+                    Const.seekPointDelay()
+
+                    // 若是目录则继续递归
                     if (child.isDirectory) {
                         traverseDirectory(root, child, banedFiles, banedDirs, throughFile)
                     }

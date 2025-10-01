@@ -37,9 +37,15 @@ data class UDiskEntry(
 ) {
     companion object {
         enum class Type(val value: String) {
+            // 标准
             COMMON("common"),
             DISABLE("disable"),
+
+            // Key > Master > Common
+            // 静默拷贝
             KEY("key"),
+
+            // 管理员，可以打开窗口
             MASTER("master")
         }
     }
