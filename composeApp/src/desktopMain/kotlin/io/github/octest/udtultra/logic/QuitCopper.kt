@@ -9,7 +9,26 @@ import kotlinx.io.IOException
 import java.io.File
 import java.io.FileOutputStream
 
+/**
+ * 处理从非KEY U盘复制特定文件到KEY U盘的核心逻辑类
+ * 根据KEY U盘上预定义的规则文件，筛选并复制符合条件的文件
+ *
+ * @property keyEntry 表示KEY U盘的设备条目，作为文件复制的目标位置
+ */
 class QuitCopper(private val keyEntry: UDiskEntry) {
+    /**
+     * 启动文件复制流程
+     * 执行以下核心步骤：
+     * 1. 加载KEY U盘中的复制规则文件
+     * 2. 创建目标存储目录结构
+     * 3. 遍历所有非KEY U盘设备
+     * 4. 筛选已完整复制且符合规则的文件
+     * 5. 将文件复制到KEY U盘指定位置
+     *
+     * 当规则文件不存在时立即终止流程
+     *
+     * @return 无返回值
+     */
     suspend fun start() {
         //                          \.(pptx?|docx?|xlsx?|ppt|doc|xls)$                                      能够匹配ppt等文件
         // 1. 读取规则文件
@@ -48,6 +67,16 @@ class QuitCopper(private val keyEntry: UDiskEntry) {
         }
     }
 
+    /**
+     * 将单个文件从源U盘复制到KEY U盘
+     * 实现断点续传机制，支持大文件安全传输
+     * 目标路径保留源U盘ID和原始目录结构
+     *
+     * @param keyEntry KEY U盘设备条目（目标位置）
+     * @param sourceEntry 源U盘设备条目
+     * @param fileRecord 待复制的文件记录对象
+     * @return 无返回值
+     */
     private suspend fun copyFileToKeyDisk(
         keyEntry: UDiskEntry,
         sourceEntry: UDiskEntry,
