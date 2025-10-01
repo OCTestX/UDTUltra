@@ -72,7 +72,7 @@ object UDTDatabase {
             set(it.name, entry.name)
             set(it.totalSpace, entry.totalSpace)
             set(it.freeSpace, entry.freeSpace)
-            set(it.type, UDiskEntry.Companion.Type.COMMON.value)
+            set(it.type, entry.type)
         }
     }
 

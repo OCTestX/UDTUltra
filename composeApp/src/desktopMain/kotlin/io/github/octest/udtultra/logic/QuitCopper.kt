@@ -5,6 +5,7 @@ import io.github.octest.udtultra.repository.UDTDatabase
 import io.github.octest.udtultra.repository.database.FileRecord
 import io.github.octest.udtultra.repository.database.UDiskEntry
 import io.github.octestx.basic.multiplatform.common.utils.storage
+import io.klogging.noCoLogger
 import kotlinx.io.IOException
 import java.io.File
 import java.io.FileOutputStream
@@ -16,6 +17,7 @@ import java.io.FileOutputStream
  * @property keyEntry 表示KEY U盘的设备条目，作为文件复制的目标位置
  */
 class QuitCopper(private val keyEntry: UDiskEntry) {
+    private val ologger = noCoLogger<QuitCopper>()
     /**
      * 启动文件复制流程
      * 执行以下核心步骤：
@@ -30,12 +32,17 @@ class QuitCopper(private val keyEntry: UDiskEntry) {
      * @return 无返回值
      */
     suspend fun start() {
+        ologger.info { "开始执行QuitCopper文件复制流程" }
         //                          \.(pptx?|docx?|xlsx?|ppt|doc|xls)$                                      能够匹配ppt等文件
         // 1. 读取规则文件
         val rulesFile = File(keyEntry.target, "KEY_UDT/quitCopy/rules.txt")
+        ologger.info { "正在读取规则文件: ${rulesFile.absolutePath}" }
         val rules = if (rulesFile.exists()) {
-            rulesFile.readLines().map { Regex(it) }
+            val rulesList = rulesFile.readLines().map { Regex(it) }
+            ologger.info { "成功加载 ${rulesList.size} 条复制规则" }
+            rulesList
         } else {
+            ologger.warn { "规则文件不存在: ${rulesFile.absolutePath}，终止复制流程" }
             // 没有规则，无需执行
             return
         }
@@ -43,11 +50,14 @@ class QuitCopper(private val keyEntry: UDiskEntry) {
         // 2. 创建目标基础目录
         val baseTargetDir = File(keyEntry.target, "KEY_UDT/quitCopy/Files")
         baseTargetDir.mkdirs()
+        ologger.info { "已创建目标目录: ${baseTargetDir.absolutePath}" }
 
         // 3. 遍历所有非KEY U盘
         val sourceEntries = UDTDatabase.getEntrys().filter { it.type != UDiskEntry.Companion.Type.KEY.value }
+        ologger.info { "发现 ${sourceEntries.size} 个非KEY U盘设备需要处理" }
 
         for (sourceEntry in sourceEntries) {
+            ologger.info { "开始处理源U盘: ${sourceEntry.id} (${sourceEntry.name})" }
             // 4. 深度遍历源U盘中的文件
             UDTDatabase.deepSeek(
                 entry = sourceEntry,
@@ -55,16 +65,23 @@ class QuitCopper(private val keyEntry: UDiskEntry) {
                 seekFile = { fileRecord ->
                     // 只处理已复制完成的文件
                     if (fileRecord.status == 2) {
+                        ologger.info { "发现已完整复制的文件: ${fileRecord.relationFilePath}" }
                         // 检查文件路径是否匹配任何规则
                         if (rules.any { it.matches(fileRecord.relationFilePath) }) {
+                            ologger.info { "文件匹配规则: ${fileRecord.relationFilePath}" }
                             // 6. 复制文件到KEY U盘
                             copyFileToKeyDisk(keyEntry, sourceEntry, fileRecord)
+                        } else {
+                            ologger.info { "文件不匹配任何规则，跳过: ${fileRecord.relationFilePath}" }
                         }
+                    } else {
+                        ologger.info { "文件未完成复制，跳过: ${fileRecord.relationFilePath} (状态: ${fileRecord.status})" }
                     }
                 },
                 seekDir = { /* 忽略目录 */ }
             )
         }
+        ologger.info { "QuitCopper文件复制流程执行完成" }
     }
 
     /**
@@ -82,6 +99,7 @@ class QuitCopper(private val keyEntry: UDiskEntry) {
         sourceEntry: UDiskEntry,
         fileRecord: FileRecord
     ) {
+        ologger.info { "开始复制文件: ${fileRecord.relationFilePath} (源U盘: ${sourceEntry.id})" }
         // 1. 获取源文件
         val sourceFile = FileTreeManager.getExitsFile(sourceEntry, fileRecord.relationFilePath).getOrThrow()
 
@@ -98,7 +116,10 @@ class QuitCopper(private val keyEntry: UDiskEntry) {
 
         // 新增：检查目标文件是否已经完整复制
         if (finalTargetFile.exists() && finalTargetFile.length() == sourceFile.length()) {
+            ologger.info { "文件已完整复制，跳过: ${fileRecord.relationFilePath} (大小: ${sourceFile.length()})" }
             return // 文件已经完整复制，跳过
+        } else if (finalTargetFile.exists()) {
+            ologger.warn { "发现不完整的文件: ${finalTargetFile.absolutePath} (目标大小: ${finalTargetFile.length()}, 源文件大小: ${sourceFile.length()})" }
         }
 
         // 使用WorkStacker进行复制
@@ -112,6 +133,13 @@ class QuitCopper(private val keyEntry: UDiskEntry) {
             try {
                 val totalSize = sourceFile.length()
                 var bytesTransferred = targetFile.length() // 初始已传输字节数（断点续传）
+                ologger.info {
+                    "开始复制文件: ${fileRecord.fileName}, 总大小: ${storage(totalSize)}, 已传输: ${
+                        storage(
+                            bytesTransferred
+                        )
+                    }"
+                }
 
                 sourceFile.inputStream().use { inputStream ->
                     // 新增：跳过已存在的字节（断点续传）
@@ -141,7 +169,9 @@ class QuitCopper(private val keyEntry: UDiskEntry) {
 
                 // 复制完成，重命名文件
                 targetFile.renameTo(finalTargetFile)
+                ologger.info { "文件复制完成: ${fileRecord.relationFilePath} -> ${finalTargetFile.absolutePath}" }
             } catch (e: Throwable) {
+                ologger.warn { "文件复制失败: ${fileRecord.relationFilePath}, 错误: ${e.message}" }
                 // 修改：仅在非IO异常时删除临时文件（保留断点数据）
                 if (e !is IOException) {
                     targetFile.delete()
